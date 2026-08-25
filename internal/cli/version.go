@@ -26,6 +26,7 @@ func (a *App) newVersionCommand() *cobra.Command {
 }
 
 func buildVersion(read func() (*debug.BuildInfo, bool), fallback string) versionView {
+	explicitRelease := fallback != "" && fallback != devVersion
 	if fallback == "" {
 		fallback = devVersion
 	}
@@ -37,7 +38,7 @@ func buildVersion(read func() (*debug.BuildInfo, bool), fallback string) version
 	if info.GoVersion != "" {
 		view.Go = info.GoVersion
 	}
-	if info.Main.Version != "" && info.Main.Version != "(devel)" {
+	if !explicitRelease && info.Main.Version != "" && info.Main.Version != "(devel)" {
 		view.Version = info.Main.Version
 	}
 	for _, setting := range info.Settings {
