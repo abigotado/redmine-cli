@@ -2,7 +2,7 @@
 
 - Project type: Go
 - Package manager: Go modules
-- Vulnerability scan: `govulncheck` completed after upgrading `golang.org/x/sys` to v0.44.0.
+- Vulnerability scan: `govulncheck` completed with patched Go 1.25.14 and `golang.org/x/sys` v0.44.0.
 - Affected critical vulnerabilities: 0
 - Affected high vulnerabilities: 0
 - Affected medium vulnerabilities: 0

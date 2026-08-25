@@ -46,6 +46,7 @@ mkdir -p "$empty_module_cache" "$empty_build_cache"
   cd "$source_dir"
   GOPROXY=off \
     GOSUMDB=off \
+    GOTOOLCHAIN=local \
     GOMODCACHE="$empty_module_cache" \
     GOCACHE="$empty_build_cache" \
     GOFLAGS='-mod=vendor -trimpath' \

@@ -26,6 +26,7 @@ func TestRunRendersDeterministicMacOSSourceFormula(t *testing.T) {
 		`ENV["CGO_ENABLED"] = "1"`,
 		`ENV["GOPROXY"] = "off"`,
 		`ENV["GOSUMDB"] = "off"`,
+		`ENV["GOTOOLCHAIN"] = "local"`,
 		`ENV["GOFLAGS"] = "-mod=vendor -trimpath"`,
 		sourceURL,
 		`version "0.1.0"`,

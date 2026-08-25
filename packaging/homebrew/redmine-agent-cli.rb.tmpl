@@ -43,6 +43,7 @@ class RedmineAgentCli < Formula
     ENV["CGO_ENABLED"] = "1"
     ENV["GOPROXY"] = "off"
     ENV["GOSUMDB"] = "off"
+    ENV["GOTOOLCHAIN"] = "local"
     ENV["GOFLAGS"] = "-mod=vendor -trimpath"
     resource("github.com/creack/pty").stage buildpath/"vendor/github.com/creack/pty"
     resource("github.com/inconshreveable/mousetrap").stage buildpath/"vendor/github.com/inconshreveable/mousetrap"

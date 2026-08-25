@@ -4,7 +4,7 @@
 - Project type: Go command-line application
 - Source extensions: `.go`, `.sh`, `.md`, `.yaml`, `.rb`
 - Package manager: Go modules (`go.mod`, `go.sum`)
-- Go: `/opt/homebrew/bin/go`, go1.27.0 used for this local scan; module minimum is go1.25.0
+- Go: `/opt/homebrew/bin/go`, go1.27.0 used for this local scan; module minimum is go1.25.14
 - Gitleaks: installed
 - Trivy: not installed
 - govulncheck: executed through a pinned `go run` tool version

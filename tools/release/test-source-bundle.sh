@@ -15,7 +15,7 @@ cd "$repository"
 git init -q -b main
 git config user.name "Release Test"
 git config user.email "release-test@example.invalid"
-printf 'module example.invalid/redmine-cli\n\ngo 1.25.0\n' >go.mod
+printf 'module example.invalid/redmine-cli\n\ngo 1.25.14\n' >go.mod
 printf 'fixture checksums\n' >go.sum
 printf 'MIT\n' >LICENSE
 printf 'package main\n\nfunc main() {}\n' >cmd/redmine-cli/main.go

@@ -116,7 +116,7 @@
   - Unclamped score: 105
   - Final: 100/100 (Strong)
 - Key Findings:
-  - [LOW]: Govulncheck reports no reachable vulnerability after `golang.org/x/sys` was upgraded to v0.44.0.
+  - [LOW]: Govulncheck reports no reachable vulnerability with the patched Go 1.25.14 toolchain and `golang.org/x/sys` v0.44.0.
   - [LOW]: Two direct dependencies and four transitive modules have newer releases.
 - Dependency Age Analysis:
   - Outdated direct count: 2
@@ -208,7 +208,7 @@ Windows, avoids unsupported directory fsync there, and has build-tagged tests.
 
 - Detected project type: Go
 - Project path: `go@.`
-- Framework/runtime: Go 1.25.0 module; local validation used Go 1.27.0 on macOS arm64.
+- Framework/runtime: Go 1.25.14 module; local validation used Go 1.27.0 on macOS arm64.
 - Package manager: Go modules
 - Repository structure: single command-line application
 - Source files scanned: `.go` production and test files plus shell, workflow, Formula, Markdown, and embedded skill assets.
@@ -229,7 +229,7 @@ Windows, avoids unsupported directory fsync there, and has build-tagged tests.
 
 ## 13. Scan Metadata
 
-- Scan date: 2026-08-25T20:42:28Z
+- Scan date: 2026-08-25T23:16:24Z
 - Project path: `/Users/Abigotado/StudioProjects/redmine-cli`
 - Project type: Go
 - Tools used: Go test, race detector, vet, gofmt, go mod verify, govulncheck, Gitleaks, actionlint, ShellCheck, ripgrep, Ruby syntax check, skill quick validator

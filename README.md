@@ -43,7 +43,7 @@ CLI.
 
 ## Build
 
-Go 1.25.0 and the macOS SDK are required for the supported credential backend.
+Go 1.25.14 and the macOS SDK are required for the supported credential backend.
 
 ```bash
 go build -o ./bin/redmine-cli ./cmd/redmine-cli
