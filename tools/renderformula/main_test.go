@@ -54,7 +54,9 @@ func TestRunRendersDeterministicMacOSSourceFormula(t *testing.T) {
 			`resource "` + module + `"`,
 			`url "https://proxy.golang.org/` + module + `/@v/` + resourceVersion + `.zip"`,
 			`sha256 "` + digest + `"`,
-			`resource("` + module + `").stage buildpath/"vendor/` + module + `"`,
+			`resource("` + module + `").stage do`,
+			`Pathname("` + module + `@` + resourceVersion + `")`,
+			`buildpath/"vendor/` + module + `"`,
 		} {
 			if !strings.Contains(formula, expected) {
 				t.Fatalf("Formula missing resource contract %q", expected)
