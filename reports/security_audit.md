@@ -191,7 +191,11 @@ Independent publication review also identified and verified remediation of three
 release blockers: Windows cleanup now atomically quarantines the entry and
 hashes/deletes the same open handle; Homebrew builds from checksum-pinned module
 resources with networking disabled; and the Agent Skill treats all Redmine
-content as untrusted data rather than instructions.
+content as untrusted data rather than instructions. Its final cycle identified
+one additional Windows blocker: the profile registry compared synthesized
+Windows mode bits to POSIX `0700/0600` values. That policy is now platform
+specific, retains strict Unix modes, accepts only regular files/directories on
+Windows, avoids unsupported directory fsync there, and has build-tagged tests.
 
 ## 10. Gemini AI Analysis
 
@@ -218,13 +222,14 @@ content as untrusted data rather than instructions.
 - Dependency age: `reports/.artifacts/step_06_security_dependency_age.md`
 - SAST: `reports/.artifacts/step_08_security_sast.md`
 - Credential boundary: `internal/auth/keychain_darwin.go`, `internal/auth/transaction.go`, `SECURITY.md`
+- Profile filesystem boundary: `internal/profile/registry.go`, `internal/profile/registry_permissions_unix.go`, `internal/profile/registry_permissions_windows.go`
 - HTTP boundary: `internal/redmine/client.go`, `internal/redmine/models.go`
 - Automation: `.github/workflows/go.yml`
 - Release supply chain: `.github/workflows/release.yml`, `tools/release/`, `RELEASE.md`
 
 ## 13. Scan Metadata
 
-- Scan date: 2026-08-25T20:29:11Z
+- Scan date: 2026-08-25T20:42:28Z
 - Project path: `/Users/Abigotado/StudioProjects/redmine-cli`
 - Project type: Go
 - Tools used: Go test, race detector, vet, gofmt, go mod verify, govulncheck, Gitleaks, actionlint, ShellCheck, ripgrep, Ruby syntax check, skill quick validator

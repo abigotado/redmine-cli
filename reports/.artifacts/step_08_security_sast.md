@@ -11,5 +11,6 @@
 - Windows uninstall race: independently reported and remediated. Cleanup atomically moves an owned path to a random quarantine name, opens it without delete sharing, then hashes and marks that same handle for deletion. Concurrent replacement of the original path is preserved; a changed quarantine is retained with a conflict.
 - Prompt injection boundary: independently reported and remediated. The Agent Skill explicitly treats all server-controlled Redmine values as untrusted data and requires separate user authorization for suggested actions.
 - Homebrew network boundary: independently reported and remediated. Formula module resources are checksum-pinned and the build disables the module proxy and checksum service while enforcing vendoring.
+- Windows profile permissions: independently reported and remediated. Unix retains exact `0700/0600` enforcement; Windows validates directory and regular-file types without comparing synthesized POSIX mode bits, and skips the unsupported directory-fsync step after syncing the registry file itself.
 - LOW findings: 0
 - MEDIUM findings: 0

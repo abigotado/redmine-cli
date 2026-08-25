@@ -194,8 +194,8 @@ func (r *Registry) read() ([]Profile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("inspect profile registry: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
-		return nil, fmt.Errorf("%w: %s must be a regular 0600 file", ErrInsecurePermissions, r.path)
+	if err := validateRegistryFileInfo(info, r.path); err != nil {
+		return nil, err
 	}
 	if info.Size() > maxRegistryBytes {
 		return nil, fmt.Errorf("%w: file exceeds %d bytes", ErrCorruptRegistry, maxRegistryBytes)
@@ -250,7 +250,7 @@ func ensureRegistryDir(dir string) error {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create profile registry directory: %w", err)
 		}
-		if err := os.Chmod(dir, 0o700); err != nil {
+		if err := secureRegistryDirectory(dir); err != nil {
 			return fmt.Errorf("secure profile registry directory: %w", err)
 		}
 		return nil
@@ -258,10 +258,7 @@ func ensureRegistryDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("inspect profile registry directory: %w", err)
 	}
-	if !info.IsDir() || info.Mode().Perm() != 0o700 {
-		return fmt.Errorf("%w: %s must be a 0700 directory", ErrInsecurePermissions, dir)
-	}
-	return nil
+	return validateRegistryDirectoryInfo(info, dir)
 }
 
 func validateRegistryDir(dir string) error {
@@ -272,10 +269,7 @@ func validateRegistryDir(dir string) error {
 	if err != nil {
 		return fmt.Errorf("inspect profile registry directory: %w", err)
 	}
-	if !info.IsDir() || info.Mode().Perm() != 0o700 {
-		return fmt.Errorf("%w: %s must be a 0700 directory", ErrInsecurePermissions, dir)
-	}
-	return nil
+	return validateRegistryDirectoryInfo(info, dir)
 }
 
 func (r *Registry) write(profiles []Profile) error {
@@ -295,7 +289,7 @@ func (r *Registry) write(profiles []Profile) error {
 		// prevents a partial registry from being mistaken for user data.
 		_ = os.Remove(tmpName)
 	}()
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := secureRegistryFile(tmp); err != nil {
 		closeErr := tmp.Close()
 		return errors.Join(fmt.Errorf("secure temporary profile registry: %w", err), closeErr)
 	}
@@ -313,23 +307,7 @@ func (r *Registry) write(profiles []Profile) error {
 	if err := os.Rename(tmpName, r.path); err != nil {
 		return fmt.Errorf("replace profile registry: %w", err)
 	}
-	openDir := r.openDir
-	if openDir == nil {
-		openDir = os.Open
-	}
-	directory, err := openDir(dir)
-	if err != nil {
-		return &CommitError{Err: fmt.Errorf("open profile registry directory for sync: %w", err)}
-	}
-	syncErr := directory.Sync()
-	closeErr := directory.Close()
-	if syncErr != nil || closeErr != nil {
-		return &CommitError{Err: errors.Join(
-			wrapIfError("sync profile registry directory", syncErr),
-			wrapIfError("close profile registry directory", closeErr),
-		)}
-	}
-	return nil
+	return syncRegistryDirectory(dir, r.openDir)
 }
 
 func wrapIfError(operation string, err error) error {

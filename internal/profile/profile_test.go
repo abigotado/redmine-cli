@@ -70,20 +70,7 @@ func TestRegistryRoundTripAndPermissions(t *testing.T) {
 	if err := registry.Add(ctx, second); err != nil {
 		t.Fatalf("Add(second) error = %v", err)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat registry: %v", err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("registry mode = %o", info.Mode().Perm())
-	}
-	dirInfo, err := os.Stat(filepath.Dir(path))
-	if err != nil {
-		t.Fatalf("stat registry dir: %v", err)
-	}
-	if dirInfo.Mode().Perm() != 0o700 {
-		t.Fatalf("registry dir mode = %o", dirInfo.Mode().Perm())
-	}
+	assertRegistryPlatformPermissions(t, path)
 	profiles, err := registry.List(ctx)
 	if err != nil || len(profiles) != 2 || profiles[0].Name != "client" || profiles[1].Name != "work" {
 		t.Fatalf("List() = %#v, %v", profiles, err)
@@ -106,7 +93,6 @@ func TestRegistryFailsClosedOnCorruptOrInsecureFile(t *testing.T) {
 	}{
 		{name: "unknown field", content: `[{"name":"work","base_url":"https://redmine.example","token":"no"}]`, mode: 0o600, want: ErrCorruptRegistry},
 		{name: "duplicate", content: `[{"name":"work","base_url":"https://redmine.example"},{"name":"work","base_url":"https://redmine.example"}]`, mode: 0o600, want: ErrCorruptRegistry},
-		{name: "broad permissions", content: `[]`, mode: 0o644, want: ErrInsecurePermissions},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
