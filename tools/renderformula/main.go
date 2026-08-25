@@ -22,8 +22,8 @@ func main() {
 	var sha256 string
 	var output string
 	flag.StringVar(&version, "version", "", "release version without v prefix")
-	flag.StringVar(&sourceURL, "source-url", "", "immutable GitHub tag archive URL")
-	flag.StringVar(&sha256, "sha256", "", "lowercase SHA-256 of the tag archive")
+	flag.StringVar(&sourceURL, "source-url", "", "canonical checksum-pinned GitHub release source URL")
+	flag.StringVar(&sha256, "sha256", "", "lowercase SHA-256 of the release source asset")
 	flag.StringVar(&output, "output", "", "new local Formula path")
 	flag.Parse()
 	if err := run(version, sourceURL, sha256, output); err != nil {
