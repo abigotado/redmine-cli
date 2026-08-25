@@ -50,12 +50,16 @@ func TestRunRendersDeterministicMacOSSourceFormula(t *testing.T) {
 			t.Fatalf("invalid Homebrew resource line %q", line)
 		}
 		module, resourceVersion, digest := fields[0], fields[1], fields[2]
+		moduleParts := strings.SplitN(module, "/", 2)
+		if len(moduleParts) != 2 {
+			t.Fatalf("module path has no registry prefix %q", module)
+		}
 		for _, expected := range []string{
 			`resource "` + module + `"`,
 			`url "https://proxy.golang.org/` + module + `/@v/` + resourceVersion + `.zip"`,
 			`sha256 "` + digest + `"`,
 			`resource("` + module + `").stage do`,
-			`Pathname("` + module + `@` + resourceVersion + `")`,
+			`Pathname("` + moduleParts[1] + `@` + resourceVersion + `")`,
 			`buildpath/"vendor/` + module + `"`,
 		} {
 			if !strings.Contains(formula, expected) {

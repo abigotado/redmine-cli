@@ -45,23 +45,23 @@ class RedmineAgentCli < Formula
     ENV["GOTOOLCHAIN"] = "local"
     ENV["GOFLAGS"] = "-mod=vendor -trimpath"
     resource("github.com/creack/pty").stage do
-      (buildpath/"vendor/github.com/creack/pty").install Pathname("github.com/creack/pty@v1.1.24").children
+      (buildpath/"vendor/github.com/creack/pty").install Pathname("creack/pty@v1.1.24").children
     end
     resource("github.com/inconshreveable/mousetrap").stage do
-      module_root = Pathname("github.com/inconshreveable/mousetrap@v1.1.0")
+      module_root = Pathname("inconshreveable/mousetrap@v1.1.0")
       (buildpath/"vendor/github.com/inconshreveable/mousetrap").install module_root.children
     end
     resource("github.com/spf13/cobra").stage do
-      (buildpath/"vendor/github.com/spf13/cobra").install Pathname("github.com/spf13/cobra@v1.10.2").children
+      (buildpath/"vendor/github.com/spf13/cobra").install Pathname("spf13/cobra@v1.10.2").children
     end
     resource("github.com/spf13/pflag").stage do
-      (buildpath/"vendor/github.com/spf13/pflag").install Pathname("github.com/spf13/pflag@v1.0.9").children
+      (buildpath/"vendor/github.com/spf13/pflag").install Pathname("spf13/pflag@v1.0.9").children
     end
     resource("golang.org/x/sys").stage do
-      (buildpath/"vendor/golang.org/x/sys").install Pathname("golang.org/x/sys@v0.44.0").children
+      (buildpath/"vendor/golang.org/x/sys").install Pathname("x/sys@v0.44.0").children
     end
     resource("golang.org/x/term").stage do
-      (buildpath/"vendor/golang.org/x/term").install Pathname("golang.org/x/term@v0.32.0").children
+      (buildpath/"vendor/golang.org/x/term").install Pathname("x/term@v0.32.0").children
     end
     (buildpath/"vendor").install "packaging/homebrew/modules.txt"
     ldflags = "-X github.com/abigotado/redmine-cli/internal/cli.releaseVersion=v{{VERSION}}"
