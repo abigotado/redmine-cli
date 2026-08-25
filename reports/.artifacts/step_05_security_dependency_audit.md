@@ -1,0 +1,25 @@
+# Step 05 - Dependency Audit
+
+- Project type: Go
+- Package manager: Go modules
+- Vulnerability scan: `govulncheck` completed after upgrading `golang.org/x/sys` to v0.44.0.
+- Affected critical vulnerabilities: 0
+- Affected high vulnerabilities: 0
+- Affected medium vulnerabilities: 0
+- Affected low vulnerabilities: 0
+- `go mod verify`: all modules verified.
+- Lock file: `go.sum` exists and contains Go checksum-database hashes.
+- Git-sourced dependencies: 0
+- Path/replaced dependencies: 0
+- Unknown registry dependencies: 0
+- Dependabot: not configured.
+- Renovate: not configured.
+- Snyk: not configured.
+- CI vulnerability scanning: configured in ordinary and release workflows with pinned govulncheck v1.1.4.
+- CI pull-request execution: configured at `.github/workflows/go.yml:3-5`.
+- CI checksum verification: configured at `.github/workflows/go.yml:25-26`.
+- Release supply chain: source-only, strict annotated SemVer tag, destination-main ancestry, reproducible archive comparison, an exact checksummed asset manifest, live REST tag re-peeling, and remote asset digest verification.
+- Third-party CI actions: pinned to full reviewed commit SHAs in both workflows.
+- Release publication permissions: `contents: write` is isolated to the final no-checkout job after all read-only gates.
+- Remote tag protection and immutable-release settings: not verifiable until the destination repository exists.
+- Pre-commit security hook: not configured.
