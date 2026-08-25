@@ -10,7 +10,7 @@ cleanup() {
 trap cleanup EXIT
 
 repository="$temporary_dir/repository"
-mkdir -p "$repository/docs/releases" "$repository/cmd/redmine-cli"
+mkdir -p "$repository/docs/releases" "$repository/cmd/redmine-cli" "$repository/packaging/homebrew"
 cd "$repository"
 git init -q -b main
 git config user.name "Release Test"
@@ -19,6 +19,8 @@ printf 'module example.invalid/redmine-cli\n\ngo 1.25.0\n' >go.mod
 printf 'fixture checksums\n' >go.sum
 printf 'MIT\n' >LICENSE
 printf 'package main\n\nfunc main() {}\n' >cmd/redmine-cli/main.go
+printf '# vendor fixture\n' >packaging/homebrew/modules.txt
+printf 'example.invalid/module\tv1.0.0\t0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n' >packaging/homebrew/resources.tsv
 printf '# Changelog\n\n## [0.1.0] - 2026-08-25\n' >CHANGELOG.md
 printf '# v0.1.0\n' >docs/releases/v0.1.0.md
 git add .
@@ -41,6 +43,8 @@ done
 
 tar -tzf "$first/redmine-cli-0.1.0.tar.gz" >"$temporary_dir/entries"
 grep -Fxq 'redmine-cli-0.1.0/go.mod' "$temporary_dir/entries"
+grep -Fxq 'redmine-cli-0.1.0/packaging/homebrew/modules.txt' "$temporary_dir/entries"
+grep -Fxq 'redmine-cli-0.1.0/packaging/homebrew/resources.tsv' "$temporary_dir/entries"
 if grep -Eq '(^|/)\.git(/|$)|local-only\.txt$' "$temporary_dir/entries"; then
   echo "archive included repository metadata or an untracked file" >&2
   exit 1
