@@ -16,7 +16,7 @@ jobs:
   verify:
     strategy:
       matrix:
-        os: [macos-14, ubuntu-latest]
+        os: [macos-14, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -41,13 +41,20 @@ jobs:
           go vet ./...
           go build ./...
       - name: Race tests
+        if: runner.os != 'Windows'
         run: go test -race -count=1 ./...
+      - name: Windows tests
+        if: runner.os == 'Windows'
+        run: go test -count=1 ./...
       - name: Vulnerability scan
         if: runner.os == 'Linux'
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
       - name: Disposable Keychain cross-binary test
         if: runner.os == 'macOS'
         run: go test -tags keychainintegration -count=1 ./internal/auth
+      - name: Offline Homebrew dependency build
+        if: runner.os == 'Linux'
+        run: ./tools/release/test-homebrew-offline.sh
 
   package:
     needs: verify

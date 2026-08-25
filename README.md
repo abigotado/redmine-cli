@@ -170,8 +170,9 @@ go run ./tools/renderformula \
 The renderer accepts only the exact canonical release-asset URL and refuses
 alternate owners, query strings, fragments, mismatched tags, invalid checksums,
 relative paths, and overwrites. The generated Formula is macOS-only, builds
-with `CGO_ENABLED=1`, `-mod=readonly`, and `-trimpath`, injects the version,
-verifies the v1 contract and
+with `CGO_ENABLED=1`, `-mod=vendor`, and `-trimpath`, injects the version,
+and stages every Go module as a separately checksummed Homebrew resource so
+the build runs with `GOPROXY=off` and an empty module cache. It verifies the v1 contract and
 Security.framework linkage, and rejects a binary containing
 `/usr/bin/security`. Publishing a tag or updating a tap is a separate,
 explicitly authorized operation and is not performed here.

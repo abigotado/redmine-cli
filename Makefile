@@ -20,3 +20,4 @@ release-check: verify
 	go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
 	actionlint -no-color
 	./tools/release/test-source-bundle.sh
+	./tools/release/test-homebrew-offline.sh

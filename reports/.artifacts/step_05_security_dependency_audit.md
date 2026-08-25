@@ -18,6 +18,8 @@
 - CI vulnerability scanning: configured in ordinary and release workflows with pinned govulncheck v1.1.4.
 - CI pull-request execution: configured at `.github/workflows/go.yml:3-5`.
 - CI checksum verification: configured at `.github/workflows/go.yml:25-26`.
+- Homebrew dependencies: each Go module is a checksum-pinned Formula resource; the release gate reconstructs `vendor/` and builds with an empty module cache, `GOPROXY=off`, and `GOSUMDB=off`.
+- Windows boundary validation: ordinary and release workflows execute the Windows-specific filesystem tests on `windows-latest`.
 - Release supply chain: source-only, strict annotated SemVer tag, destination-main ancestry, reproducible archive comparison, an exact checksummed asset manifest, live REST tag re-peeling, and remote asset digest verification.
 - Third-party CI actions: pinned to full reviewed commit SHAs in both workflows.
 - Release publication permissions: `contents: write` is isolated to the final no-checkout job after all read-only gates.

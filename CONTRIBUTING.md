@@ -21,3 +21,5 @@ diff afterward.
 macOS Homebrew packaging is a source-building Formula pinned to the canonical
 release source asset and its SHA-256. Do not add a prebuilt Darwin binary, cask,
 mutable URL, placeholder release, or quarantine-removal workaround.
+Every Go dependency must also remain represented by a checksum-pinned Formula
+resource and pass the empty-module-cache offline build test.

@@ -24,7 +24,9 @@ func TestRunRendersDeterministicMacOSSourceFormula(t *testing.T) {
 		`class RedmineAgentCli < Formula`,
 		`depends_on :macos`,
 		`ENV["CGO_ENABLED"] = "1"`,
-		`ENV["GOFLAGS"] = "-mod=readonly -trimpath"`,
+		`ENV["GOPROXY"] = "off"`,
+		`ENV["GOSUMDB"] = "off"`,
+		`ENV["GOFLAGS"] = "-mod=vendor -trimpath"`,
 		sourceURL,
 		`version "0.1.0"`,
 		`sha256 "` + sha + `"`,
@@ -37,6 +39,27 @@ func TestRunRendersDeterministicMacOSSourceFormula(t *testing.T) {
 	}
 	if strings.Contains(formula, "{{") {
 		t.Fatalf("Formula has unresolved placeholder:\n%s", formula)
+	}
+	resources, err := os.ReadFile(filepath.Join("..", "..", "packaging", "homebrew", "resources.tsv"))
+	if err != nil {
+		t.Fatalf("read Homebrew resources: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(resources)), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 3 {
+			t.Fatalf("invalid Homebrew resource line %q", line)
+		}
+		module, resourceVersion, digest := fields[0], fields[1], fields[2]
+		for _, expected := range []string{
+			`resource "` + module + `"`,
+			`url "https://proxy.golang.org/` + module + `/@v/` + resourceVersion + `.zip"`,
+			`sha256 "` + digest + `"`,
+			`resource("` + module + `").stage buildpath/"vendor/` + module + `"`,
+		} {
+			if !strings.Contains(formula, expected) {
+				t.Fatalf("Formula missing resource contract %q", expected)
+			}
+		}
 	}
 	if err := run(version, sourceURL, sha, output); err == nil {
 		t.Fatal("run() overwrote an existing Formula")

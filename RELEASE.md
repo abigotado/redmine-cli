@@ -31,7 +31,8 @@ not intrinsically immutable.
 
 1. Work on a human project-convention branch such as `feat/redmine_cli`.
 2. Update `CHANGELOG.md` and add `docs/releases/vX.Y.Z.md`.
-3. Run `make release-check` and the publication security review.
+3. Run `make release-check`, including the empty-module-cache Homebrew build,
+   and the publication security review.
 4. Commit and push the feature branch only after explicitly verifying its
    destination remote.
 5. Merge through a pull request. Do not tag the feature-branch commit.

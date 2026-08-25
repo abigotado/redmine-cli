@@ -38,13 +38,13 @@
   - Lock-file checksum validation in CI: +10
   - Final: 40/100 (Critical)
 - Key Findings:
-  - [LOW]: Pinned govulncheck, `go mod verify`, vet, build, race tests, generation checks, and a disposable cross-binary Keychain test are present in CI.
+  - [LOW]: Pinned govulncheck, `go mod verify`, vet, build, race tests, Windows-native tests, generation checks, an offline Homebrew dependency build, and a disposable cross-binary Keychain test are present in CI.
   - [LOW]: The source-only release workflow isolates write permission to a no-checkout publication job and binds its bundle to both tag-object and peeled-commit SHAs.
   - [LOW]: No dependency-update bot, pre-commit secret hook, or Trivy job is configured.
   - [LOW]: Destination tag protection and immutable-release settings remain unverified until a remote repository exists.
 - Evidence:
-  - `.github/workflows/go.yml:3-42`
-  - `.github/workflows/release.yml:15-271`
+  - `.github/workflows/go.yml:3-50`
+  - `.github/workflows/release.yml:15-278`
   - `reports/.artifacts/step_05_security_dependency_audit.md`
   - `reports/.artifacts/step_07_security_trivy.md`
 - Risks:
@@ -152,6 +152,7 @@
 - Key Findings:
   - [LOW]: Go dependencies resolve through ordinary module paths with `go.sum` verification and no local replacement.
   - [LOW]: The Homebrew renderer requires the exact canonical release source URL and lowercase SHA-256.
+  - [LOW]: Every Go module used by the Formula is a separately checksum-pinned resource, and an empty-module-cache test builds with `GOPROXY=off`, `GOSUMDB=off`, and vendoring enforced.
   - [LOW]: Third-party GitHub Actions are pinned to full commit SHAs with their major tags retained as comments.
   - [LOW]: The source archive is regenerated twice, checksummed with an exact manifest, and bound to a live re-peeled annotated tag before publication.
 - Evidence:
@@ -159,8 +160,10 @@
   - `go.sum`
   - `tools/renderformula/main.go:14-61`
   - `packaging/homebrew/redmine-agent-cli.rb.tmpl`
+  - `packaging/homebrew/resources.tsv`
+  - `tools/release/test-homebrew-offline.sh`
   - `tools/release/create-source-bundle.sh:13-148`
-  - `.github/workflows/release.yml:64-271`
+  - `.github/workflows/release.yml:71-278`
 - Risks:
   - Future runner-image and pinned-tool version drift remain external supply-chain considerations.
 - Recommendations:
@@ -183,6 +186,12 @@
 2. [LOW]: Add redacted secret and filesystem scanning to CI before publication if required. Effort: Low. Impact: Medium.
 3. [LOW]: Review compatible dependency updates before the first tag. Effort: Low. Impact: Low.
 4. [LOW]: Enable protected `v*` tags and immutable releases at the confirmed destination when supported. Effort: Low. Impact: Medium.
+
+Independent publication review also identified and verified remediation of three
+release blockers: Windows cleanup now atomically quarantines the entry and
+hashes/deletes the same open handle; Homebrew builds from checksum-pinned module
+resources with networking disabled; and the Agent Skill treats all Redmine
+content as untrusted data rather than instructions.
 
 ## 10. Gemini AI Analysis
 
@@ -215,7 +224,7 @@
 
 ## 13. Scan Metadata
 
-- Scan date: 2026-08-25T20:09:27Z
+- Scan date: 2026-08-25T20:29:11Z
 - Project path: `/Users/Abigotado/StudioProjects/redmine-cli`
 - Project type: Go
 - Tools used: Go test, race detector, vet, gofmt, go mod verify, govulncheck, Gitleaks, actionlint, ShellCheck, ripgrep, Ruby syntax check, skill quick validator

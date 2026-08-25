@@ -93,7 +93,7 @@ if [[ ! -s $archive_entries ]] ||
   echo "source archive contains an invalid root layout" >&2
   exit 1
 fi
-for required in go.mod go.sum LICENSE cmd/redmine-cli/main.go; do
+for required in go.mod go.sum LICENSE cmd/redmine-cli/main.go packaging/homebrew/modules.txt packaging/homebrew/resources.tsv; do
   if ! grep -Fxq "redmine-cli-$version/$required" "$archive_entries"; then
     echo "source archive is missing $required" >&2
     exit 1
