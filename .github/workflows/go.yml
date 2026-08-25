@@ -1,0 +1,50 @@
+name: go
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Format
+        shell: bash
+        run: test -z "$(gofmt -l .)"
+      - name: Verify module checksums
+        run: go mod verify
+      - name: Vulnerability scan
+        if: runner.os == 'Linux'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Build
+        run: go build ./...
+      - name: Test
+        if: runner.os != 'Windows'
+        run: go test -race ./...
+      - name: Test on Windows
+        if: runner.os == 'Windows'
+        run: go test -count=1 ./...
+      - name: Generated references
+        run: |
+          go generate ./...
+          git diff --exit-code
+      - name: Disposable Keychain cross-binary test
+        if: runner.os == 'macOS'
+        run: go test -tags keychainintegration ./internal/auth
+      - name: Offline Homebrew dependency build
+        if: runner.os == 'Linux'
+        run: ./tools/release/test-homebrew-offline.sh

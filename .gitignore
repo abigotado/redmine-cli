@@ -1,0 +1,15 @@
+/bin/
+/dist/
+/coverage/
+/.claude/
+/.codex/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.test
+*.out
+.DS_Store
