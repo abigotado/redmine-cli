@@ -255,7 +255,14 @@ jobs:
             --title "redmine-cli $tag" \
             --notes-file "$bundle/$notes"
 
-          release_json=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+          releases_json=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")
+          release_count=$(jq --arg tag "$tag" '[.[] | select(.tag_name == $tag and .draft == true)] | length' <<<"$releases_json")
+          if [[ $release_count != 1 ]]; then
+            echo "expected exactly one draft release for $tag" >&2
+            exit 1
+          fi
+          release_json=$(jq -c --arg tag "$tag" '.[] | select(.tag_name == $tag and .draft == true)' <<<"$releases_json")
+          release_id=$(jq -er '.id' <<<"$release_json")
           if [[ $(jq -er '.draft' <<<"$release_json") != true ]]; then
             echo "release was not created as a draft" >&2
             exit 1
@@ -275,4 +282,12 @@ jobs:
             echo "release has an unexpected remote asset count" >&2
             exit 1
           fi
-          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          published_json=$(gh api \
+            --method PATCH \
+            "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+            -F draft=false \
+            -f make_latest=true)
+          if ! jq -e '.draft == false' <<<"$published_json" >/dev/null; then
+            echo "release remained a draft after publication" >&2
+            exit 1
+          fi
