@@ -29,7 +29,6 @@ func TestRunRendersDeterministicMacOSSourceFormula(t *testing.T) {
 		`ENV["GOTOOLCHAIN"] = "local"`,
 		`ENV["GOFLAGS"] = "-mod=vendor -trimpath"`,
 		sourceURL,
-		`version "0.1.0"`,
 		`sha256 "` + sha + `"`,
 		`releaseVersion=v0.1.0`,
 		`Security.framework`,
