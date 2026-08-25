@@ -1,0 +1,271 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    strategy:
+      matrix:
+        os: [macos-14, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify module checksums
+        run: go mod verify
+      - name: Verify generated files
+        shell: bash
+        run: |
+          set -euo pipefail
+          go generate ./...
+          git diff --exit-code
+      - name: Vet and build
+        run: |
+          go vet ./...
+          go build ./...
+      - name: Race tests
+        run: go test -race -count=1 ./...
+      - name: Vulnerability scan
+        if: runner.os == 'Linux'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - name: Disposable Keychain cross-binary test
+        if: runner.os == 'macOS'
+        run: go test -tags keychainintegration -count=1 ./internal/auth
+
+  package:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      EVENT_SHA: ${{ github.sha }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Validate tag trust boundary
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=$RELEASE_TAG
+          if [[ ! $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag is not stable SemVer" >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          if [[ $(git cat-file -t "refs/tags/$tag" 2>/dev/null) != tag ]]; then
+            echo "release tag must be annotated" >&2
+            exit 1
+          fi
+          tag_object_sha=$(git rev-parse "refs/tags/$tag")
+          commit_sha=$(git rev-parse "refs/tags/$tag^{commit}")
+          if [[ $EVENT_SHA != "$tag_object_sha" && $EVENT_SHA != "$commit_sha" ]]; then
+            echo "workflow event does not match the release tag" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$commit_sha" refs/remotes/origin/main; then
+            echo "release commit is not reachable from origin/main" >&2
+            exit 1
+          fi
+          printf 'commit_sha=%s\n' "$commit_sha" >>"$GITHUB_OUTPUT"
+          printf 'tag_object_sha=%s\n' "$tag_object_sha" >>"$GITHUB_OUTPUT"
+      - name: Build deterministic source bundle
+        env:
+          VERIFIED_COMMIT: ${{ steps.release.outputs.commit_sha }}
+          VERIFIED_TAG_OBJECT: ${{ steps.release.outputs.tag_object_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          output=$RUNNER_TEMP/release-bundle
+          tools/release/create-source-bundle.sh \
+            "$RELEASE_TAG" \
+            "$VERIFIED_COMMIT" \
+            "$output"
+          jq -e \
+            --arg tag "$RELEASE_TAG" \
+            --arg tag_object "$VERIFIED_TAG_OBJECT" \
+            --arg commit "$VERIFIED_COMMIT" \
+            '.tag == $tag and .tag_object_sha == $tag_object and .commit_sha == $commit' \
+            "$output/release-manifest.json" >/dev/null
+      - name: Test source-bundle invariants
+        run: tools/release/test-source-bundle.sh
+      - name: Upload verified release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-bundle
+          path: ${{ runner.temp }}/release-bundle/*
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    env:
+      EVENT_SHA: ${{ github.sha }}
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - name: Download verified workflow artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name release-bundle \
+            --dir "$RUNNER_TEMP/release-bundle"
+      - name: Revalidate bundle and live tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=$RELEASE_TAG
+          bundle=$RUNNER_TEMP/release-bundle
+          if [[ ! $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag is not stable SemVer" >&2
+            exit 1
+          fi
+          version=${tag#v}
+          archive="redmine-cli-$version.tar.gz"
+          notes="release-notes-$tag.md"
+          printf '%s\n' "$archive" "$notes" release-manifest.json SHA256SUMS | LC_ALL=C sort >"$RUNNER_TEMP/expected-assets"
+          find "$bundle" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort >"$RUNNER_TEMP/actual-assets"
+          cmp "$RUNNER_TEMP/expected-assets" "$RUNNER_TEMP/actual-assets"
+          for asset in "$archive" "$notes" release-manifest.json SHA256SUMS; do
+            if [[ ! -f $bundle/$asset || -L $bundle/$asset ]]; then
+              echo "release asset is not a regular file: $asset" >&2
+              exit 1
+            fi
+          done
+          printf '%s\n' "$archive" "$notes" release-manifest.json | LC_ALL=C sort >"$RUNNER_TEMP/expected-checksums"
+          if grep -Ev '^[0-9a-f]{64}  [A-Za-z0-9._-]+$' "$bundle/SHA256SUMS" | grep -q .; then
+            echo "SHA256SUMS has an invalid line" >&2
+            exit 1
+          fi
+          awk '{print $2}' "$bundle/SHA256SUMS" | LC_ALL=C sort >"$RUNNER_TEMP/actual-checksums"
+          cmp "$RUNNER_TEMP/expected-checksums" "$RUNNER_TEMP/actual-checksums"
+          (cd "$bundle" && sha256sum -c SHA256SUMS)
+
+          manifest=$bundle/release-manifest.json
+          manifest_tag=$(jq -er '.tag' "$manifest")
+          manifest_version=$(jq -er '.version' "$manifest")
+          tag_object_sha=$(jq -er '.tag_object_sha | select(test("^[0-9a-f]{40}$"))' "$manifest")
+          commit_sha=$(jq -er '.commit_sha | select(test("^[0-9a-f]{40}$"))' "$manifest")
+          if [[ $manifest_tag != "$tag" || $manifest_version != "$version" ]]; then
+            echo "release manifest version mismatch" >&2
+            exit 1
+          fi
+          archive_size=$(wc -c <"$bundle/$archive" | tr -d ' ')
+          archive_digest=$(sha256sum "$bundle/$archive" | awk '{print $1}')
+          notes_size=$(wc -c <"$bundle/$notes" | tr -d ' ')
+          notes_digest=$(sha256sum "$bundle/$notes" | awk '{print $1}')
+          jq -e \
+            --arg archive "$archive" \
+            --arg archive_digest "$archive_digest" \
+            --argjson archive_size "$archive_size" \
+            --arg notes "$notes" \
+            --arg notes_digest "$notes_digest" \
+            --argjson notes_size "$notes_size" \
+            '.schema == 1 and
+             .source == {name: $archive, sha256: $archive_digest, size: $archive_size} and
+             .release_notes == {name: $notes, sha256: $notes_digest, size: $notes_size}' \
+            "$manifest" >/dev/null
+          if [[ $EVENT_SHA != "$tag_object_sha" && $EVENT_SHA != "$commit_sha" ]]; then
+            echo "workflow event no longer matches the packaged tag" >&2
+            exit 1
+          fi
+
+          ref_json=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag")
+          live_type=$(jq -er '.object.type' <<<"$ref_json")
+          live_sha=$(jq -er '.object.sha' <<<"$ref_json")
+          if [[ $live_sha != "$tag_object_sha" ]]; then
+            echo "release tag moved after packaging" >&2
+            exit 1
+          fi
+          for _ in {1..8}; do
+            if [[ $live_type == commit ]]; then
+              break
+            fi
+            if [[ $live_type != tag ]]; then
+              echo "release tag peels to unsupported object type: $live_type" >&2
+              exit 1
+            fi
+            tag_json=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$live_sha")
+            live_type=$(jq -er '.object.type' <<<"$tag_json")
+            live_sha=$(jq -er '.object.sha' <<<"$tag_json")
+          done
+          if [[ $live_type != commit || $live_sha != "$commit_sha" ]]; then
+            echo "live release tag does not peel to the packaged commit" >&2
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "a release already exists for $tag" >&2
+            exit 1
+          fi
+          printf 'archive=%s\n' "$archive" >>"$GITHUB_OUTPUT"
+          printf 'notes=%s\n' "$notes" >>"$GITHUB_OUTPUT"
+      - name: Create, verify, and publish release
+        env:
+          ARCHIVE_NAME: ${{ steps.release.outputs.archive }}
+          NOTES_NAME: ${{ steps.release.outputs.notes }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=$RELEASE_TAG
+          bundle=$RUNNER_TEMP/release-bundle
+          archive=$ARCHIVE_NAME
+          notes=$NOTES_NAME
+          gh release create "$tag" \
+            "$bundle/$archive" \
+            "$bundle/$notes" \
+            "$bundle/release-manifest.json" \
+            "$bundle/SHA256SUMS" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --title "redmine-cli $tag" \
+            --notes-file "$bundle/$notes"
+
+          release_json=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag")
+          if [[ $(jq -er '.draft' <<<"$release_json") != true ]]; then
+            echo "release was not created as a draft" >&2
+            exit 1
+          fi
+          for asset in "$archive" "$notes" release-manifest.json SHA256SUMS; do
+            local_size=$(wc -c <"$bundle/$asset" | tr -d ' ')
+            local_digest="sha256:$(sha256sum "$bundle/$asset" | awk '{print $1}')"
+            remote_count=$(jq --arg name "$asset" '[.assets[] | select(.name == $name)] | length' <<<"$release_json")
+            remote_size=$(jq -er --arg name "$asset" '.assets[] | select(.name == $name) | .size' <<<"$release_json")
+            remote_digest=$(jq -er --arg name "$asset" '.assets[] | select(.name == $name) | .digest' <<<"$release_json")
+            if [[ $remote_count != 1 || $remote_size != "$local_size" || $remote_digest != "$local_digest" ]]; then
+              echo "remote asset verification failed for $asset" >&2
+              exit 1
+            fi
+          done
+          if [[ $(jq '.assets | length' <<<"$release_json") != 4 ]]; then
+            echo "release has an unexpected remote asset count" >&2
+            exit 1
+          fi
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest

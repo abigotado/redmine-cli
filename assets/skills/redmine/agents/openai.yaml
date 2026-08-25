@@ -1,0 +1,4 @@
+interface:
+  display_name: "Redmine"
+  short_description: "Read Redmine safely through redmine-cli"
+  default_prompt: "Use redmine-cli with an explicit profile and bounded fields/pages to answer this Redmine request."

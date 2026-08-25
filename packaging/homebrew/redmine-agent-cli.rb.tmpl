@@ -1,0 +1,34 @@
+class RedmineAgentCli < Formula
+  desc "Agent-first Redmine CLI with native macOS Keychain storage"
+  homepage "https://github.com/abigotado/redmine-cli"
+  url "{{SOURCE_URL}}"
+  version "{{VERSION}}"
+  sha256 "{{SHA256}}"
+  license "MIT"
+
+  depends_on "go" => :build
+  depends_on :macos
+
+  def install
+    ENV["CGO_ENABLED"] = "1"
+    ENV["GOFLAGS"] = "-mod=readonly -trimpath"
+    ldflags = "-X github.com/abigotado/redmine-cli/internal/cli.releaseVersion=v{{VERSION}}"
+    system "go", "build", *std_go_args(output: bin/"redmine-cli", ldflags: ldflags), "./cmd/redmine-cli"
+  end
+
+  test do
+    version_response = JSON.parse(shell_output("#{bin}/redmine-cli version -o json"))
+    assert version_response["ok"]
+    assert_equal "v{{VERSION}}", version_response.dig("data", "version")
+
+    contract_response = JSON.parse(shell_output("#{bin}/redmine-cli contract -o json"))
+    assert contract_response["ok"]
+    assert_equal 1, contract_response.dig("data", "envelope_version")
+
+    linkage = shell_output("/usr/bin/otool -L #{bin}/redmine-cli")
+    assert_match "/System/Library/Frameworks/Security.framework/", linkage
+
+    binary = File.binread(bin/"redmine-cli")
+    refute_match "/usr/bin/security", binary
+  end
+end
