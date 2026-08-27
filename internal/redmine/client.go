@@ -23,6 +23,7 @@ const (
 	maxAttempts     = 3
 	maxResponseBody = 4 << 20
 	maxDrainBody    = 64 << 10
+	maxRetryAfter   = time.Duration(1<<63 - 1)
 )
 
 var safePathSegment = regexp.MustCompile(`^[A-Za-z0-9._~-]+$`)
@@ -203,6 +204,12 @@ func (client *Client) get(ctx context.Context, request request, out any) error {
 		if delay <= 0 {
 			delay = retryBackoff(attempt)
 		}
+		if advertisedRetryAfter(translated) > 0 && !delayFitsDeadline(ctx, delay) {
+			if err := ctx.Err(); err != nil {
+				return errx.Translate(err)
+			}
+			return translated
+		}
 		client.log.Debug("retrying Redmine request", "method", http.MethodGet, "attempt", attempt, "delay", delay)
 		if err := client.sleep(ctx, delay); err != nil {
 			return translateSleepError(ctx, err)
@@ -298,14 +305,44 @@ func retryBackoff(attempt int) time.Duration {
 
 func parseRetryAfter(value string, now time.Time) time.Duration {
 	trimmed := strings.TrimSpace(value)
-	if seconds, err := strconv.Atoi(trimmed); err == nil && seconds > 0 {
+	if seconds, err := strconv.ParseUint(trimmed, 10, 64); err == nil && seconds > 0 {
+		if seconds > uint64(maxRetryAfter/time.Second) {
+			return maxRetryAfter
+		}
 		return time.Duration(seconds) * time.Second
+	} else if errors.Is(err, strconv.ErrRange) && decimalDigits(trimmed) {
+		return maxRetryAfter
 	}
 	when, err := http.ParseTime(trimmed)
 	if err != nil || !when.After(now) {
 		return 0
 	}
 	return when.Sub(now)
+}
+
+func decimalDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func advertisedRetryAfter(err error) time.Duration {
+	var typed *errx.Error
+	if errors.As(err, &typed) {
+		return typed.RetryAfter
+	}
+	return 0
+}
+
+func delayFitsDeadline(ctx context.Context, delay time.Duration) bool {
+	deadline, ok := ctx.Deadline()
+	return !ok || delay <= time.Until(deadline)
 }
 
 func sleepContext(ctx context.Context, delay time.Duration) error {

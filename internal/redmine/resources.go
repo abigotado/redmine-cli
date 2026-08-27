@@ -373,7 +373,7 @@ type cursorPayload struct {
 
 // EncodeCursor creates an opaque request-bound cursor.
 func EncodeCursor(resource string, offset int, fingerprint string) (string, error) {
-	if resource == "" || offset <= 0 || len(fingerprint) != sha256.Size*2 {
+	if resource == "" || offset <= 0 || !validCursorFingerprint(fingerprint) {
 		return "", errx.Internal("cannot encode invalid pagination cursor")
 	}
 	raw, err := json.Marshal(cursorPayload{V: 1, Resource: resource, Offset: offset, Fingerprint: fingerprint})
@@ -383,27 +383,59 @@ func EncodeCursor(resource string, offset int, fingerprint string) (string, erro
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+// ValidateCursor rejects a malformed or wrong-resource cursor without needing
+// profile metadata. DecodeCursor performs the remaining request-binding check.
+func ValidateCursor(value, resource string) error {
+	_, err := parseCursor(value, resource)
+	return err
+}
+
 // DecodeCursor validates an opaque cursor for the current request.
 func DecodeCursor(value, resource, fingerprint string) (int, error) {
+	payload, err := parseCursor(value, resource)
+	if err != nil {
+		return 0, err
+	}
 	if value == "" {
 		return 0, nil
 	}
+	if payload.Fingerprint != fingerprint {
+		return 0, errx.Usage("pagination cursor does not match this profile and query")
+	}
+	return payload.Offset, nil
+}
+
+func parseCursor(value, resource string) (cursorPayload, error) {
+	if value == "" {
+		return cursorPayload{}, nil
+	}
 	if len(value) > 2048 {
-		return 0, errx.Usage("pagination cursor is invalid")
+		return cursorPayload{}, errx.Usage("pagination cursor is invalid")
 	}
 	raw, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
-		return 0, errx.Usage("pagination cursor is invalid")
+		return cursorPayload{}, errx.Usage("pagination cursor is invalid")
 	}
 	var payload cursorPayload
 	decoder := json.NewDecoder(strings.NewReader(string(raw)))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&payload); err != nil || payload.V != 1 || payload.Resource != resource || payload.Offset <= 0 || payload.Fingerprint != fingerprint {
-		return 0, errx.Usage("pagination cursor does not match this profile and query")
+	if err := decoder.Decode(&payload); err != nil {
+		return cursorPayload{}, errx.Usage("pagination cursor is invalid")
 	}
 	var extra json.RawMessage
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return 0, errx.Usage("pagination cursor is invalid")
+		return cursorPayload{}, errx.Usage("pagination cursor is invalid")
 	}
-	return payload.Offset, nil
+	if payload.V != 1 || payload.Resource != resource || payload.Offset <= 0 || !validCursorFingerprint(payload.Fingerprint) {
+		return cursorPayload{}, errx.Usage("pagination cursor does not match this profile and query")
+	}
+	return payload, nil
+}
+
+func validCursorFingerprint(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
 }

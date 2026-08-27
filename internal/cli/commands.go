@@ -274,6 +274,9 @@ func (a *App) newProjectsListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := redmine.ValidateCursor(cursor, "projects"); err != nil {
+				return err
+			}
 			client, selected, err := a.client(cmd.Context())
 			if err != nil {
 				return err
@@ -368,12 +371,15 @@ func (a *App) newIssuesListCommand() *cobra.Command {
 				return err
 			}
 			options.Include = derived
-			client, selected, err := a.client(cmd.Context())
+			options.Offset = 0
+			query, err := options.Query()
 			if err != nil {
 				return err
 			}
-			options.Offset = 0
-			query, err := options.Query()
+			if err := redmine.ValidateCursor(cursor, "issues"); err != nil {
+				return err
+			}
+			client, selected, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}

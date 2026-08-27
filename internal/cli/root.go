@@ -186,19 +186,17 @@ func (a *App) selectedProfile(ctx context.Context) (profile.Profile, error) {
 }
 
 func (a *App) client(ctx context.Context) (redmineReader, profile.Profile, error) {
-	if a.profileName == "" {
-		return nil, profile.Profile{}, errx.ProfileRequired()
+	selected, err := a.selectedProfile(ctx)
+	if err != nil {
+		return nil, profile.Profile{}, err
 	}
-	if a.registry == nil {
-		return nil, profile.Profile{}, errx.Internal("profile registry is unavailable")
-	}
-	var selected profile.Profile
+	profileName := selected.Name
 	var client redmineReader
-	err := a.registry.WithProfileLock(ctx, a.profileName, func() error {
+	err = a.registry.WithProfileLock(ctx, profileName, func() error {
 		var loadErr error
-		selected, loadErr = a.registry.Get(ctx, a.profileName)
+		selected, loadErr = a.registry.Get(ctx, profileName)
 		if loadErr != nil {
-			return translateLocal(loadErr, a.profileName)
+			return translateLocal(loadErr, profileName)
 		}
 		credential, loadErr := a.store.Load(ctx, selected.Name)
 		if loadErr != nil {
