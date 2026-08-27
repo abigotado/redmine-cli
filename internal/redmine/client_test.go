@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -151,6 +152,59 @@ func TestRateLimitUsesRetryAfter(t *testing.T) {
 	}
 }
 
+func TestRateLimitBeyondDeadlineReturnsAdvertisedErrorWithoutSleeping(t *testing.T) {
+	t.Parallel()
+	var attempts int
+	var sleeps int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		attempts++
+		writer.Header().Set("Retry-After", "120")
+		writer.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+	client := newForTest(server.URL, Credential{Token: secretSentinel}, WithSleep(func(context.Context, time.Duration) error {
+		sleeps++
+		return nil
+	}))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	_, err := client.Myself(ctx)
+
+	var typed *errx.Error
+	if !errors.As(err, &typed) {
+		t.Fatalf("error = %v, want *errx.Error", err)
+	}
+	if typed.Reason != "RATE_LIMITED" || typed.RetryAfter != 2*time.Minute {
+		t.Fatalf("error reason=%q retry_after=%s", typed.Reason, typed.RetryAfter)
+	}
+	if attempts != 1 || sleeps != 0 {
+		t.Fatalf("attempts=%d sleeps=%d", attempts, sleeps)
+	}
+}
+
+func TestParseRetryAfterClampsDeltaSecondsWithoutOverflow(t *testing.T) {
+	t.Parallel()
+	maxWholeSeconds := uint64(maxRetryAfter / time.Second)
+	tests := []struct {
+		name  string
+		value string
+		want  time.Duration
+	}{
+		{name: "largest safe duration", value: strconv.FormatUint(maxWholeSeconds, 10), want: time.Duration(maxWholeSeconds) * time.Second},
+		{name: "duration overflow", value: strconv.FormatUint(maxWholeSeconds+1, 10), want: maxRetryAfter},
+		{name: "maximum uint64", value: strconv.FormatUint(^uint64(0), 10), want: maxRetryAfter},
+		{name: "uint64 overflow", value: strings.Repeat("9", 64), want: maxRetryAfter},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := parseRetryAfter(testCase.value, time.Time{}); got != testCase.want {
+				t.Fatalf("parseRetryAfter(%q) = %s, want %s", testCase.value, got, testCase.want)
+			}
+		})
+	}
+}
+
 func TestOversizedAndInvalidJSONAreSafe(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -237,6 +291,15 @@ func TestCursorIsBoundToProfileURLResourceAndFilters(t *testing.T) {
 	offset, err := DecodeCursor(cursor, "issues", fingerprint)
 	if err != nil || offset != 25 {
 		t.Fatalf("DecodeCursor() = %d, %v", offset, err)
+	}
+	if err := ValidateCursor(cursor, "issues"); err != nil {
+		t.Fatalf("ValidateCursor() error = %v", err)
+	}
+	if err := ValidateCursor("not-base64!", "issues"); err == nil || errx.ExitCode(err) != errx.CodeUsage {
+		t.Fatalf("ValidateCursor() malformed error = %v", err)
+	}
+	if err := ValidateCursor(cursor, "projects"); err == nil || errx.ExitCode(err) != errx.CodeUsage {
+		t.Fatalf("ValidateCursor() resource error = %v", err)
 	}
 	mismatches := []struct {
 		resource    string

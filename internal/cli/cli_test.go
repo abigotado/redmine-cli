@@ -60,6 +60,27 @@ func (r *memoryRegistry) Remove(_ context.Context, name string) error {
 	return nil
 }
 
+type changingRegistry struct {
+	memoryRegistry
+	preflight profile.Profile
+	locked    profile.Profile
+	lockedErr error
+	underLock bool
+}
+
+func (r *changingRegistry) WithProfileLock(_ context.Context, _ string, fn func() error) error {
+	r.underLock = true
+	defer func() { r.underLock = false }()
+	return fn()
+}
+
+func (r *changingRegistry) Get(context.Context, string) (profile.Profile, error) {
+	if r.underLock {
+		return r.locked, r.lockedErr
+	}
+	return r.preflight, nil
+}
+
 type memoryStore struct {
 	values map[string]auth.Credential
 	loads  int
@@ -244,6 +265,127 @@ func TestInvalidFieldsFailBeforeCredentialOrNetworkOperations(t *testing.T) {
 			}
 			if _, exists := registry.values["work"]; !exists {
 				t.Fatal("invalid fields changed profile metadata")
+			}
+		})
+	}
+}
+
+func TestInvalidListInputsFailBeforeProfileCredentialOrNetworkOperations(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "limit", args: []string{"issues", "list", "--profile", "missing", "--limit", "0"}},
+		{name: "sort", args: []string{"issues", "list", "--profile", "missing", "--sort", "bogus"}},
+		{name: "issue cursor", args: []string{"issues", "list", "--profile", "missing", "--cursor", "not-base64!"}},
+		{name: "project cursor", args: []string{"projects", "list", "--profile", "missing", "--cursor", "not-base64!"}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := &memoryRegistry{values: map[string]profile.Profile{}}
+			store := &memoryStore{values: map[string]auth.Credential{}}
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			factoryCalls := 0
+			app := &App{
+				registry: registry, store: store, stdin: panicReader{}, stdout: stdout, stderr: stderr,
+				newRedmine: func(profile.Profile, auth.Credential, *slog.Logger) (redmineReader, error) {
+					factoryCalls++
+					return nil, errors.New("unexpected client creation")
+				},
+			}
+
+			code := app.Run(context.Background(), app.NewRootCommand(), testCase.args)
+
+			if code != errx.CodeUsage {
+				t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			if store.loads != 0 || factoryCalls != 0 {
+				t.Fatalf("credential loads=%d client factory calls=%d", store.loads, factoryCalls)
+			}
+			if !strings.Contains(stdout.String(), `"code":"USAGE"`) {
+				t.Fatalf("stdout=%s, want USAGE envelope", stdout.String())
+			}
+		})
+	}
+}
+
+func TestMissingProfileDoesNotCreatePerProfileLock(t *testing.T) {
+	registryPath := filepath.Join(t.TempDir(), "config", "profiles.json")
+	registry := profile.NewRegistry(registryPath)
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	app := &App{
+		registry: registry, store: panicStore{}, stdin: panicReader{}, stdout: stdout, stderr: stderr,
+		newRedmine: func(profile.Profile, auth.Credential, *slog.Logger) (redmineReader, error) {
+			panic("client must not be created")
+		},
+	}
+
+	code := app.Run(context.Background(), app.NewRootCommand(), []string{"me", "--profile", "nope"})
+
+	if code != errx.CodeNotFound {
+		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"code":"NOT_FOUND_PROFILE"`) {
+		t.Fatalf("stdout=%s, want NOT_FOUND_PROFILE envelope", stdout.String())
+	}
+	if _, err := os.Lstat(registryPath + ".profile-nope.lock"); !os.IsNotExist(err) {
+		t.Fatalf("missing profile left a lock artifact: %v", err)
+	}
+}
+
+func TestClientUsesProfileReadUnderLock(t *testing.T) {
+	tests := []struct {
+		name             string
+		locked           profile.Profile
+		lockedErr        error
+		wantCode         errx.Code
+		wantURL          string
+		wantLoads        int
+		wantFactoryCalls int
+	}{
+		{
+			name: "profile changed", locked: profile.Profile{Name: "work", BaseURL: "https://new.redmine.test"},
+			wantCode: errx.CodeOK, wantURL: "https://new.redmine.test", wantLoads: 1, wantFactoryCalls: 1,
+		},
+		{
+			name: "profile deleted", lockedErr: profile.ErrNotFound,
+			wantCode: errx.CodeNotFound,
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			registry := &changingRegistry{
+				memoryRegistry: memoryRegistry{values: map[string]profile.Profile{}},
+				preflight:      profile.Profile{Name: "work", BaseURL: "https://old.redmine.test"},
+				locked:         testCase.locked,
+				lockedErr:      testCase.lockedErr,
+			}
+			store := &memoryStore{values: map[string]auth.Credential{"work": {Token: cliSecretSentinel}}}
+			stdout := &bytes.Buffer{}
+			stderr := &bytes.Buffer{}
+			factoryCalls := 0
+			var selectedURL string
+			app := &App{
+				registry: registry, store: store, stdin: panicReader{}, stdout: stdout, stderr: stderr,
+				newRedmine: func(selected profile.Profile, credential auth.Credential, logger *slog.Logger) (redmineReader, error) {
+					factoryCalls++
+					selectedURL = selected.BaseURL
+					return clientFactory(http.StatusOK, `{"user":{"id":1,"login":"ok"}}`)(selected, credential, logger)
+				},
+			}
+
+			code := app.Run(context.Background(), app.NewRootCommand(), []string{"me", "--profile", "work"})
+
+			if code != testCase.wantCode {
+				t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+			}
+			if selectedURL != testCase.wantURL {
+				t.Fatalf("selected URL=%q, want %q", selectedURL, testCase.wantURL)
+			}
+			if store.loads != testCase.wantLoads || factoryCalls != testCase.wantFactoryCalls {
+				t.Fatalf("credential loads=%d client factory calls=%d", store.loads, factoryCalls)
 			}
 		})
 	}
