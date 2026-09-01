@@ -48,3 +48,12 @@ jobs:
       - name: Offline Homebrew dependency build
         if: runner.os == 'Linux'
         run: ./tools/release/test-homebrew-offline.sh
+
+  build-and-test:
+    name: Build and test
+    if: always()
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful test matrix
+        run: test "${{ needs.test.result }}" = success
