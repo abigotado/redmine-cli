@@ -32,8 +32,13 @@ import `net/http`. `internal/errx` imports no other internal package.
   operations.
 - Redmine redirects are refused. Response bodies are bounded and upstream error
   bodies never reach user-visible errors.
-- The external command surface is read-only. Local auth and skill installation
-  may mutate only their own state and honor `--dry-run`/`--yes` gates.
+- The external command surface may read resources and perform the explicitly
+  supported non-destructive create, update, upload, and download operations.
+  Every network mutation requires an explicit `--profile` and `--yes`; its
+  `--dry-run` path must avoid credentials, network access, and file contents.
+  Never expose a generic Redmine request passthrough or delete/archive actions.
+  Local auth and skill installation may mutate only their own state and honor
+  `--dry-run`/`--yes` gates.
 - `GET /users/current.json` may return `api_key`; only the allowlisted SafeUser
   DTO may cross the HTTP boundary.
 

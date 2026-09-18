@@ -37,6 +37,8 @@ const (
 	CodePermission Code = 8
 	// CodeConflict signals stale state or a write conflict.
 	CodeConflict Code = 9
+	// CodeWriteOutcomeUnknown signals an accepted or ambiguous write whose result is unavailable.
+	CodeWriteOutcomeUnknown Code = 10
 )
 
 // CodeInfo documents one exit status.
@@ -58,6 +60,7 @@ var codes = []CodeInfo{
 	{CodeConfirm, "CONFIRMATION_REQUIRED", "write was not confirmed", "obtain approval, then add --yes"},
 	{CodePermission, "PERMISSION_DENIED", "Redmine permission or token scope denied", "request permission or scope; do not retry unchanged"},
 	{CodeConflict, "CONFLICT", "stale state or write conflict", "re-read the issue or transition before deciding"},
+	{CodeWriteOutcomeUnknown, "WRITE_OUTCOME_UNKNOWN", "a write may have applied but its result is unavailable", "check Redmine before retrying"},
 }
 
 // Codes returns a copy of the exit-code contract.

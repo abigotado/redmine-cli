@@ -2,13 +2,17 @@
 
 Agent-first, provider-neutral Redmine CLI for Codex and Claude Code.
 
-`redmine-cli` is a standalone Go binary that exposes a small read-only
-Redmine surface through a versioned machine contract. It keeps API tokens in
+`redmine-cli` is a standalone Go binary that exposes a small, bounded Redmine
+surface through a versioned machine contract. It keeps API tokens in
 native macOS Keychain, requires an explicit named profile for every network
 call, and embeds one canonical Agent Skill installable for either provider.
 
-The initial external API surface is intentionally read-only. Auth and skill
-commands change only local `redmine-cli` state.
+Read operations are complemented by explicit, non-destructive issue/project
+create and update commands, plus project-file upload and attachment download.
+Every network mutation requires `--profile` and `--yes`; `--dry-run` previews
+the sanitized request without accessing credentials, the network, or file
+contents. Delete/archive operations and arbitrary REST passthrough remain
+unsupported.
 
 ## Design goals
 
@@ -31,8 +35,8 @@ The first Redmine contract was verified read-only against:
   `GET /issues.json`, direct issue reads, `assigned_to_id`,
   journals, and attachments.
 - `delivery_boy_fl/.gitlab-ci.yml` and `dgdapp/.gitlab-ci.yml`:
-  the same header plus Redmine upload/project-file routes. Those write routes
-  are deliberately not exposed by this MVP.
+  the same header plus Redmine upload/project-file routes, now represented by
+  the bounded, explicitly confirmed file commands below.
 - `jira-cli` and `trello-cli`: package boundaries, native credential
   storage, JSON envelopes, exit codes, skill packaging, and source-building
   Homebrew policy.

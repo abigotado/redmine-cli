@@ -251,7 +251,7 @@ func (a *App) newProjectsCommand() *cobra.Command {
 			return errx.Usage("%s needs a command", cmd.CommandPath())
 		},
 	}
-	command.AddCommand(a.newProjectsListCommand(), a.newProjectsGetCommand())
+	command.AddCommand(a.newProjectsListCommand(), a.newProjectsGetCommand(), a.newProjectsCreateCommand(), a.newProjectsUpdateCommand())
 	return command
 }
 
@@ -272,6 +272,9 @@ func (a *App) newProjectsListCommand() *cobra.Command {
 			}
 			derived, err := projectIncludes(a.fields, includes)
 			if err != nil {
+				return err
+			}
+			if err := redmine.ValidateCursor(cursor, "projects"); err != nil {
 				return err
 			}
 			client, selected, err := a.client(cmd.Context())
@@ -347,7 +350,7 @@ func (a *App) newIssuesCommand() *cobra.Command {
 			return errx.Usage("%s needs a command", cmd.CommandPath())
 		},
 	}
-	command.AddCommand(a.newIssuesListCommand(), a.newIssuesGetCommand())
+	command.AddCommand(a.newIssuesListCommand(), a.newIssuesGetCommand(), a.newIssuesCreateCommand(), a.newIssuesUpdateCommand())
 	return command
 }
 
@@ -368,12 +371,15 @@ func (a *App) newIssuesListCommand() *cobra.Command {
 				return err
 			}
 			options.Include = derived
-			client, selected, err := a.client(cmd.Context())
+			options.Offset = 0
+			query, err := options.Query()
 			if err != nil {
 				return err
 			}
-			options.Offset = 0
-			query, err := options.Query()
+			if err := redmine.ValidateCursor(cursor, "issues"); err != nil {
+				return err
+			}
+			client, selected, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}

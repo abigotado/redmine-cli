@@ -186,6 +186,14 @@ func Conflict(reason, format string, args ...any) *Error {
 	return &Error{Code: CodeConflict, Reason: reason, Message: fmt.Sprintf(format, args...), Hint: "re-read the issue and available transitions before deciding whether to retry"}
 }
 
+// WriteOutcomeUnknown reports a non-idempotent request that must be checked before retrying.
+func WriteOutcomeUnknown(reason, format string, args ...any) *Error {
+	if reason == "" {
+		reason = "WRITE_OUTCOME_UNKNOWN"
+	}
+	return &Error{Code: CodeWriteOutcomeUnknown, Reason: reason, Message: fmt.Sprintf(format, args...), Hint: "check Redmine before retrying this write"}
+}
+
 func upper(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))

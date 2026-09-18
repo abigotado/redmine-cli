@@ -1,10 +1,10 @@
 {
-  "overall": 91,
-  "timestamp": "2026-08-25T23:16:24Z",
+  "overall": 90,
+  "timestamp": "2026-08-27T10:43:38-03:00",
   "scores": {
     "sensitiveFile": 100,
     "secretDetection": 100,
-    "dependencySecurity": 100,
+    "dependencySecurity": 95,
     "supplyChainIntegrity": 100,
     "securityAutomation": 40
   },
@@ -13,5 +13,5 @@
     "medium": 1,
     "low": 4
   },
-  "projectType": "go"
+  "projectType": "Go command-line application"
 }

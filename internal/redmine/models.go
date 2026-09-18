@@ -90,6 +90,22 @@ type Attachment struct {
 	CreatedOn   string   `json:"created_on,omitempty"`
 }
 
+// File is a project file returned by Redmine's Files API.
+type File struct {
+	ID          int      `json:"id"`
+	Filename    string   `json:"filename"`
+	Filesize    int64    `json:"filesize,omitempty"`
+	ContentType string   `json:"content_type,omitempty"`
+	Description string   `json:"description,omitempty"`
+	ContentURL  string   `json:"content_url,omitempty"`
+	Author      *NamedID `json:"author,omitempty"`
+	CreatedOn   string   `json:"created_on,omitempty"`
+}
+
+type filePage struct {
+	Files []File `json:"files"`
+}
+
 // JournalDetail models a Redmine journal change.
 type JournalDetail struct {
 	Property string          `json:"property,omitempty"`
