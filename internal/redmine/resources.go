@@ -307,6 +307,11 @@ func validateIdentifier(value string) error {
 	return nil
 }
 
+// ValidateProjectReference validates a numeric project ID or textual identifier.
+func ValidateProjectReference(value string) error {
+	return validateIdentifier(value)
+}
+
 func validateFilter(label, value string) error {
 	if len(value) > 256 || strings.ContainsAny(value, "\x00\r\n\t") {
 		return errx.Usage("%s is invalid", label)

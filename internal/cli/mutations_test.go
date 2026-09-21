@@ -20,24 +20,32 @@ import (
 
 type recordingMutationClient struct {
 	redmineReader
-	issueAttrs   map[string]any
-	projectAttrs map[string]any
-	projectID    int
-	uploadName   string
-	uploadBody   string
-	addedName    string
-	addedDesc    string
-	addedVersion int
+	issueAttrs    map[string]any
+	projectAttrs  map[string]any
+	projectID     int
+	uploadName    string
+	uploadBody    string
+	addedName     string
+	addedDesc     string
+	addedVersion  int
+	issueIncludes []string
 }
 
-func (client *recordingMutationClient) CreateIssue(_ context.Context, attributes map[string]any) (redmine.Issue, error) {
+func (client *recordingMutationClient) CreateIssue(_ context.Context, attributes map[string]any, _ []redmine.IssueUpload) (redmine.Issue, error) {
 	client.issueAttrs = attributes
 	return testIssue(), nil
 }
 
-func (client *recordingMutationClient) UpdateIssue(_ context.Context, _ int, attributes map[string]any) (redmine.Issue, error) {
+func (client *recordingMutationClient) UpdateIssue(_ context.Context, _ int, attributes map[string]any, _ []redmine.IssueUpload) (redmine.Issue, error) {
 	client.issueAttrs = attributes
 	return testIssue(), nil
+}
+
+func (client *recordingMutationClient) Issue(_ context.Context, _ int, includes []string) (redmine.Issue, error) {
+	client.issueIncludes = append([]string(nil), includes...)
+	issue := testIssue()
+	issue.Attachments = []redmine.Attachment{{ID: 1, Filename: "report.txt"}}
+	return issue, nil
 }
 
 func (client *recordingMutationClient) CreateProject(_ context.Context, attributes map[string]any) (redmine.Project, error) {
@@ -55,7 +63,7 @@ func (client *recordingMutationClient) Project(context.Context, string, []string
 	return testProject(), nil
 }
 
-func (client *recordingMutationClient) Upload(_ context.Context, filename string, body io.Reader) (redmine.UploadToken, error) {
+func (client *recordingMutationClient) Upload(_ context.Context, filename string, _ int64, body io.Reader) (redmine.UploadToken, error) {
 	data, err := io.ReadAll(body)
 	if err != nil {
 		return redmine.UploadToken{}, err
@@ -288,7 +296,7 @@ func TestMutationCommandsForwardOnlyRequestedAttributesAndBoundedFiles(t *testin
 			name: "project create",
 			args: []string{"projects", "create", "--profile", "work", "--name", "Ship it", "--identifier", "ship-it", "--public", "true", "--yes"},
 			check: func(t *testing.T, client *recordingMutationClient) {
-				if len(client.projectAttrs) != 3 || client.projectAttrs["name"] != "Ship it" || client.projectAttrs["public"] != true {
+				if len(client.projectAttrs) != 3 || client.projectAttrs["name"] != "Ship it" || client.projectAttrs["is_public"] != true {
 					t.Fatalf("project attributes=%#v", client.projectAttrs)
 				}
 			},
@@ -323,6 +331,44 @@ func TestMutationCommandsForwardOnlyRequestedAttributesAndBoundedFiles(t *testin
 			}
 			testCase.check(t, client)
 		})
+	}
+}
+
+func TestMutationLocalValidationUsesUsageEnvelope(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "auth login URL", args: []string{"auth", "login", "--profile", "work"}},
+		{name: "issue project", args: []string{"issues", "create", "--profile", "work", "--subject", "Ship it"}},
+		{name: "issue subject", args: []string{"issues", "create", "--profile", "work", "--project-id", "1"}},
+		{name: "project name", args: []string{"projects", "create", "--profile", "work", "--identifier", "ship-it"}},
+		{name: "project identifier", args: []string{"projects", "create", "--profile", "work", "--name", "Ship it"}},
+		{name: "file path", args: []string{"files", "add", "ship-it", "--profile", "work"}},
+		{name: "immutable project identifier", args: []string{"projects", "update", "ship-it", "--profile", "work", "--identifier", "other", "--yes"}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			app, _, store, stdout, stderr := newTestApp()
+			code := app.Run(context.Background(), app.NewRootCommand(), testCase.args)
+			if code != errx.CodeUsage || store.loads != 0 || !strings.Contains(stdout.String(), `"code":"USAGE"`) {
+				t.Fatalf("code=%d loads=%d stdout=%s stderr=%s", code, store.loads, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestIssueAttachmentKeepsCommaInFilenameAndReadsRequestedFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "a,b.txt")
+	if err := os.WriteFile(path, []byte("report"), 0o600); err != nil {
+		t.Fatalf("write attachment: %v", err)
+	}
+	app, _, _, stdout, stderr := newTestApp()
+	client := &recordingMutationClient{}
+	app.newRedmine = func(profile.Profile, auth.Credential, *slog.Logger) (redmineReader, error) { return client, nil }
+	code := app.Run(context.Background(), app.NewRootCommand(), []string{"issues", "create", "--profile", "work", "--project-id", "1", "--subject", "Ship it", "--attach", path, "--fields", "attachments", "--yes"})
+	if code != errx.CodeOK || client.uploadName != "a,b.txt" || len(client.issueIncludes) != 1 || client.issueIncludes[0] != "attachments" || !strings.Contains(stdout.String(), "report.txt") {
+		t.Fatalf("code=%d upload=%q includes=%v stdout=%s stderr=%s", code, client.uploadName, client.issueIncludes, stdout.String(), stderr.String())
 	}
 }
 

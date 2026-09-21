@@ -89,7 +89,7 @@ Create one Redmine issue
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--assigned-to-id` | string |  | numeric assignee ID or none |
-| `--attach` | stringSlice |  | regular file to attach (repeatable) |
+| `--attach` | stringArray |  | regular file to attach (repeatable) |
 | `--description` | string |  | issue description |
 | `--priority-id` | string |  | numeric priority ID |
 | `--project-id` | string |  | numeric Redmine project ID |
@@ -133,7 +133,7 @@ Usage: `redmine-cli issues update ID`
 | Flag | Type | Default | Description |
 | --- | --- | --- | --- |
 | `--assigned-to-id` | string |  | numeric assignee ID or none |
-| `--attach` | stringSlice |  | regular file to attach (repeatable) |
+| `--attach` | stringArray |  | regular file to attach (repeatable) |
 | `--description` | string |  | issue description (empty clears) |
 | `--status-id` | string |  | numeric status ID |
 | `--subject` | string |  | issue subject |
@@ -188,7 +188,6 @@ Usage: `redmine-cli projects update ID_OR_IDENTIFIER`
 | --- | --- | --- | --- |
 | `--description` | string |  | project description (empty clears) |
 | `--homepage` | string |  | project homepage (empty clears) |
-| `--identifier` | string |  | project identifier |
 | `--inherit-members` | string |  | true or false |
 | `--name` | string |  | project name |
 | `--parent-id` | string |  | numeric parent project ID or none |

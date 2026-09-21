@@ -102,7 +102,6 @@ func (a *App) newAuthLoginCommand() *cobra.Command {
 	}
 	command.Flags().StringVar(&baseURL, "url", "", "canonical Redmine HTTPS base URL")
 	command.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read one bounded API token from stdin")
-	_ = command.MarkFlagRequired("url")
 	return command
 }
 

@@ -37,12 +37,12 @@ type redmineReader interface {
 	Project(context.Context, string, []string) (redmine.Project, error)
 	Issues(context.Context, redmine.IssueListOptions) (redmine.IssuePage, error)
 	Issue(context.Context, int, []string) (redmine.Issue, error)
-	CreateIssue(context.Context, map[string]any) (redmine.Issue, error)
-	UpdateIssue(context.Context, int, map[string]any) (redmine.Issue, error)
+	CreateIssue(context.Context, map[string]any, []redmine.IssueUpload) (redmine.Issue, error)
+	UpdateIssue(context.Context, int, map[string]any, []redmine.IssueUpload) (redmine.Issue, error)
 	CreateProject(context.Context, map[string]any) (redmine.Project, error)
 	UpdateProject(context.Context, int, map[string]any) (redmine.Project, error)
 	Files(context.Context, string) ([]redmine.File, error)
-	Upload(context.Context, string, io.Reader) (redmine.UploadToken, error)
+	Upload(context.Context, string, int64, io.Reader) (redmine.UploadToken, error)
 	AddFile(context.Context, int, redmine.UploadToken, string, string, int) error
 	DownloadAttachment(context.Context, int) ([]byte, error)
 }
@@ -99,7 +99,7 @@ func NewApp() *App {
 func (a *App) NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "redmine-cli",
-		Short:         "Read Redmine safely from command lines and AI agents",
+		Short:         "Use Redmine safely from command lines and AI agents",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args: usageArgs(func(cmd *cobra.Command, args []string) error {

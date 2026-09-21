@@ -12,8 +12,9 @@ URL. The CLI refuses redirects and sends credentials only in the
 Network mutations require `--yes` and are sent exactly once: a transport or
 server failure after a write can mean that Redmine applied it, so callers must
 inspect Redmine before retrying. File uploads use opaque in-memory tokens that
-are never rendered. Attachment downloads first validate a same-origin Redmine
-URL and buffer the bounded response before writing raw bytes to stdout.
+are never rendered. Attachment downloads derive a bounded same-origin route
+from the validated numeric attachment ID, never from server-supplied URLs,
+before writing raw bytes to stdout.
 
 The source-built distribution deliberately uses an allow-any-application
 decrypt ACL so rebuilt unsigned binaries can run non-interactively. Keychain

@@ -49,7 +49,7 @@ func TestMutationMethodsPayloadsAndReadback(t *testing.T) {
 			path: "/issues.json",
 			want: `{"issue":{"project_id":1,"subject":"Ship it"}}`,
 			run: func(ctx context.Context, client *Client) error {
-				_, err := client.CreateIssue(ctx, map[string]any{"project_id": 1, "subject": "Ship it"})
+				_, err := client.CreateIssue(ctx, map[string]any{"project_id": 1, "subject": "Ship it"}, nil)
 				return err
 			},
 		},
@@ -58,7 +58,7 @@ func TestMutationMethodsPayloadsAndReadback(t *testing.T) {
 			path: "/issues/7.json",
 			want: `{"issue":{"status_id":2}}`,
 			run: func(ctx context.Context, client *Client) error {
-				_, err := client.UpdateIssue(ctx, 7, map[string]any{"status_id": 2})
+				_, err := client.UpdateIssue(ctx, 7, map[string]any{"status_id": 2}, nil)
 				return err
 			},
 		},
@@ -158,7 +158,7 @@ func TestMutationStatusErrorsNeverExposeUpstreamBody(t *testing.T) {
 			}))
 			defer server.Close()
 
-			_, err := newForTest(server.URL, Credential{Token: secretSentinel}).CreateIssue(context.Background(), map[string]any{"project_id": 1, "subject": "Ship it"})
+			_, err := newForTest(server.URL, Credential{Token: secretSentinel}).CreateIssue(context.Background(), map[string]any{"project_id": 1, "subject": "Ship it"}, nil)
 			if errx.ExitCode(err) != testCase.code {
 				t.Fatalf("code=%d want %d, error=%v", errx.ExitCode(err), testCase.code, err)
 			}
@@ -176,6 +176,9 @@ func TestUploadAndFilesUseBoundedSafeRepresentations(t *testing.T) {
 		case "/uploads.json":
 			if request.Method != http.MethodPost || request.URL.Query().Get("filename") != "notes.txt" {
 				t.Errorf("upload request %s %s", request.Method, request.URL.String())
+			}
+			if request.ContentLength != 5 {
+				t.Errorf("upload content length=%d", request.ContentLength)
 			}
 			data, err := io.ReadAll(request.Body)
 			if err != nil || string(data) != "hello" {
@@ -204,7 +207,7 @@ func TestUploadAndFilesUseBoundedSafeRepresentations(t *testing.T) {
 	defer server.Close()
 
 	client := newForTest(server.URL, Credential{Token: secretSentinel})
-	token, err := client.Upload(context.Background(), "notes.txt", strings.NewReader("hello"))
+	token, err := client.Upload(context.Background(), "notes.txt", 5, strings.NewReader("hello"))
 	if err != nil {
 		t.Fatalf("Upload() error=%v", err)
 	}
@@ -213,6 +216,15 @@ func TestUploadAndFilesUseBoundedSafeRepresentations(t *testing.T) {
 	}
 	if encoded, err := json.Marshal(token); err != nil || strings.Contains(string(encoded), secretSentinel) {
 		t.Fatalf("upload token leaked through JSON: %s err=%v", encoded, err)
+	}
+	upload := NewIssueUpload(token, "notes.txt")
+	for _, format := range []string{"%v", "%+v", "%#v", "%s", "%q"} {
+		if rendered := fmt.Sprintf(format, upload); strings.Contains(rendered, secretSentinel) {
+			t.Fatalf("issue upload leaked through %q: %s", format, rendered)
+		}
+	}
+	if encoded, err := json.Marshal(upload); err != nil || strings.Contains(string(encoded), secretSentinel) {
+		t.Fatalf("issue upload leaked through JSON: %s err=%v", encoded, err)
 	}
 	if err := client.AddFile(context.Background(), 3, token, "notes.txt", "notes", 6); err != nil {
 		t.Fatalf("AddFile() error=%v", err)
@@ -225,12 +237,16 @@ func TestUploadAndFilesUseBoundedSafeRepresentations(t *testing.T) {
 
 func TestUploadEnforcesBoundaryAtHTTPClient(t *testing.T) {
 	tests := []struct {
-		name    string
-		size    int64
-		wantErr errx.Code
+		name     string
+		declared int64
+		actual   int64
+		wantErr  errx.Code
 	}{
-		{name: "at limit", size: maxUploadBody},
-		{name: "above limit", size: maxUploadBody + 1, wantErr: errx.CodeWriteOutcomeUnknown},
+		{name: "at limit", declared: maxUploadBody, actual: maxUploadBody},
+		{name: "declared size above limit", declared: maxUploadBody + 1, actual: maxUploadBody + 1, wantErr: errx.CodeUsage},
+		{name: "body longer than declared", declared: 5, actual: 6, wantErr: errx.CodeWriteOutcomeUnknown},
+		{name: "body shorter than declared", declared: 6, actual: 5, wantErr: errx.CodeWriteOutcomeUnknown},
+		{name: "zero declaration with content", declared: 0, actual: 1, wantErr: errx.CodeUsage},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -242,11 +258,19 @@ func TestUploadEnforcesBoundaryAtHTTPClient(t *testing.T) {
 			}))
 			defer server.Close()
 
-			_, err := newForTest(server.URL, Credential{Token: secretSentinel}).Upload(context.Background(), "large.bin", &sizedReader{remaining: testCase.size})
+			_, err := newForTest(server.URL, Credential{Token: secretSentinel}).Upload(context.Background(), "large.bin", testCase.declared, &sizedReader{remaining: testCase.actual})
 			if errx.ExitCode(err) != testCase.wantErr {
 				t.Fatalf("error=%v code=%d", err, errx.ExitCode(err))
 			}
-			if received := <-counts; received != maxUploadBody && !(testCase.size < maxUploadBody && received == testCase.size) {
+			if testCase.wantErr == errx.CodeUsage {
+				select {
+				case received := <-counts:
+					t.Fatalf("oversized declaration reached server with %d bytes", received)
+				default:
+				}
+				return
+			}
+			if received := <-counts; received > testCase.declared {
 				t.Fatalf("received=%d", received)
 			}
 		})
@@ -261,7 +285,7 @@ func TestAcceptedWritesWithoutUsableResultAreOutcomeUnknown(t *testing.T) {
 		{
 			name: "create issue",
 			run: func(ctx context.Context, client *Client) error {
-				_, err := client.CreateIssue(ctx, map[string]any{"project_id": 1, "subject": "Ship it"})
+				_, err := client.CreateIssue(ctx, map[string]any{"project_id": 1, "subject": "Ship it"}, nil)
 				return err
 			},
 		},
@@ -275,7 +299,7 @@ func TestAcceptedWritesWithoutUsableResultAreOutcomeUnknown(t *testing.T) {
 		{
 			name: "upload",
 			run: func(ctx context.Context, client *Client) error {
-				_, err := client.Upload(ctx, "notes.txt", strings.NewReader("notes"))
+				_, err := client.Upload(ctx, "notes.txt", 5, strings.NewReader("notes"))
 				return err
 			},
 		},
@@ -299,9 +323,7 @@ func TestDownloadAttachmentRequiresSameOriginPathAndBoundsResponse(t *testing.T)
 	transport := mutationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
 		body := ""
 		switch request.URL.Path {
-		case "/redmine/attachments/1.json":
-			body = `{"attachment":{"id":1,"content_url":"https://redmine.test/redmine/attachments/download/1/report.txt"}}`
-		case "/redmine/attachments/download/1/report.txt":
+		case "/redmine/attachments/download/1":
 			downloads++
 			body = "report bytes"
 		default:
@@ -319,41 +341,29 @@ func TestDownloadAttachmentRequiresSameOriginPathAndBoundsResponse(t *testing.T)
 	}
 }
 
-func TestDownloadAttachmentRejectsUnsafeContentURLBeforeSecondRequest(t *testing.T) {
+func TestDownloadAttachmentUsesOnlyItsNumericID(t *testing.T) {
 	t.Parallel()
-	unsafe := []string{
-		"https://elsewhere.test/attachments/download/1/x",
-		"https://redmine.test/attachments/download/1/x",
-		"https://redmine.test/redmine/attachments/download/2/x",
-		"https://redmine.test/redmine/attachments/download/1/x?token=bad",
+	calls := 0
+	transport := mutationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		if request.URL.Path != "/redmine/attachments/download/1" || request.URL.RawQuery != "" {
+			t.Fatalf("unsafe download route %s", request.URL.String())
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("download")), Request: request}, nil
+	})
+	client, err := New(Config{BaseURL: "https://redmine.test/redmine"}, Credential{Token: secretSentinel}, WithHTTPClient(&http.Client{Transport: transport}))
+	if err != nil {
+		t.Fatalf("New() error=%v", err)
 	}
-	for _, contentURL := range unsafe {
-		t.Run(contentURL, func(t *testing.T) {
-			calls := 0
-			transport := mutationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
-				calls++
-				body := `{"attachment":{"id":1,"content_url":` + fmt.Sprintf("%q", contentURL) + `}}`
-				return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
-			})
-			client, err := New(Config{BaseURL: "https://redmine.test/redmine"}, Credential{Token: secretSentinel}, WithHTTPClient(&http.Client{Transport: transport}))
-			if err != nil {
-				t.Fatalf("New() error=%v", err)
-			}
-			_, err = client.DownloadAttachment(context.Background(), 1)
-			if errx.ExitCode(err) != errx.CodeInternal || calls != 1 {
-				t.Fatalf("error=%v calls=%d", err, calls)
-			}
-		})
+	data, err := client.DownloadAttachment(context.Background(), 1)
+	if err != nil || string(data) != "download" || calls != 1 {
+		t.Fatalf("data=%q err=%v calls=%d", data, err, calls)
 	}
 }
 
 func TestDownloadAttachmentRejectsOversizedResponse(t *testing.T) {
 	t.Parallel()
 	transport := mutationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
-		if request.URL.Path == "/attachments/1.json" {
-			body := `{"attachment":{"id":1,"content_url":"https://redmine.test/attachments/download/1/report.txt"}}`
-			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
-		}
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(&sizedReader{remaining: maxDownloadBody + 1}), Request: request}, nil
 	})
 	client, err := New(Config{BaseURL: "https://redmine.test"}, Credential{Token: secretSentinel}, WithHTTPClient(&http.Client{Transport: transport}))
@@ -363,5 +373,62 @@ func TestDownloadAttachmentRejectsOversizedResponse(t *testing.T) {
 	_, err = client.DownloadAttachment(context.Background(), 1)
 	if errx.ExitCode(err) != errx.CodeInternal {
 		t.Fatalf("error=%v code=%d", err, errx.ExitCode(err))
+	}
+}
+
+func TestMutationCancellationKeepsWriteOutcomeAmbiguous(t *testing.T) {
+	t.Parallel()
+	started := make(chan struct{})
+	transport := mutationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		close(started)
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	})
+	client, err := New(Config{BaseURL: "https://redmine.test"}, Credential{Token: secretSentinel}, WithHTTPClient(&http.Client{Transport: transport}))
+	if err != nil {
+		t.Fatalf("New() error=%v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = client.CreateIssue(ctx, map[string]any{"project_id": 1, "subject": "Ship it"}, nil)
+	if errx.ExitCode(err) != errx.CodeRetryable {
+		t.Fatalf("pre-dispatch cancellation error=%v", err)
+	}
+
+	ctx, cancel = context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, requestErr := client.CreateIssue(ctx, map[string]any{"project_id": 1, "subject": "Ship it"}, nil)
+		result <- requestErr
+	}()
+	<-started
+	cancel()
+	if err := <-result; errx.ExitCode(err) != errx.CodeWriteOutcomeUnknown {
+		t.Fatalf("dispatched cancellation error=%v", err)
+	}
+}
+
+func TestDownloadCancellationPreservesContextError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	started := make(chan struct{})
+	transport := mutationRoundTripFunc(func(request *http.Request) (*http.Response, error) {
+		close(started)
+		<-request.Context().Done()
+		return nil, request.Context().Err()
+	})
+	client, err := New(Config{BaseURL: "https://redmine.test"}, Credential{Token: secretSentinel}, WithHTTPClient(&http.Client{Transport: transport}))
+	if err != nil {
+		t.Fatalf("New() error=%v", err)
+	}
+	result := make(chan error, 1)
+	go func() {
+		_, requestErr := client.DownloadAttachment(ctx, 1)
+		result <- requestErr
+	}()
+	<-started
+	cancel()
+	if err := <-result; errx.ExitCode(err) != errx.CodeRetryable {
+		t.Fatalf("error=%v", err)
 	}
 }

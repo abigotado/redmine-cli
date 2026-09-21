@@ -14,6 +14,14 @@ based on Keep a Changelog, and this project follows Semantic Versioning.
 
 ### Fixed
 
+- Send Redmine's `is_public` attribute for project visibility and reject
+  immutable project identifiers on update.
+- Derive attachment downloads from their numeric IDs instead of trusting an
+  upstream content URL, and preserve timeout/cancellation semantics for reads.
+- Preserve comma-containing attachment filenames, return local input failures
+  as `USAGE`, and read requested write associations before rendering them.
+- Keep upload tokens opaque through the CLI, send a verified Content-Length,
+  and harden selected-file handling against special-file and reparse races.
 - Validate issue-list filters and malformed pagination cursors before profile
   and Keychain access so invalid local input returns `USAGE` without credential
   operations.

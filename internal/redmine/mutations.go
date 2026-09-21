@@ -1,6 +1,7 @@
 package redmine
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/abigotado/redmine-cli/internal/errx"
 )
@@ -26,38 +26,55 @@ type UploadToken struct{ value string }
 
 func (UploadToken) Format(state fmt.State, _ rune) { _, _ = io.WriteString(state, "<redacted>") }
 
+// IssueUpload keeps a Redmine upload token opaque outside this package.
+type IssueUpload struct {
+	token    UploadToken
+	filename string
+}
+
+// Format prevents an opaque upload token from being exposed through a
+// composite value's diagnostic formatting.
+func (IssueUpload) Format(state fmt.State, _ rune) { _, _ = io.WriteString(state, "<redacted>") }
+
+// NewIssueUpload binds an opaque upload token to its requested filename.
+func NewIssueUpload(token UploadToken, filename string) IssueUpload {
+	return IssueUpload{token: token, filename: filename}
+}
+
 type uploadLimitReader struct {
-	reader    io.Reader
+	reader    *bufio.Reader
 	remaining int64
 }
 
 func (reader *uploadLimitReader) Read(buffer []byte) (int, error) {
 	if reader.remaining == 0 {
-		var extra [1]byte
-		n, err := reader.reader.Read(extra[:])
-		if n > 0 {
-			return 0, errx.Usage("file exceeds the 50 MiB safety limit")
+		if _, err := reader.reader.Peek(1); err == nil {
+			return 0, errx.Usage("file content does not match its declared size")
+		} else if errors.Is(err, io.EOF) {
+			return 0, io.EOF
+		} else {
+			return 0, err
 		}
-		return 0, err
 	}
 	if int64(len(buffer)) > reader.remaining {
 		buffer = buffer[:reader.remaining]
 	}
 	n, err := reader.reader.Read(buffer)
 	reader.remaining -= int64(n)
+	if reader.remaining == 0 && err == nil {
+		if _, peekErr := reader.reader.Peek(1); peekErr == nil {
+			return n, errx.Usage("file content does not match its declared size")
+		} else if !errors.Is(peekErr, io.EOF) {
+			return n, peekErr
+		}
+	}
 	return n, err
 }
 
-// IssueUploads converts opaque tokens into the exact Redmine issue payload.
-func IssueUploads(tokens []UploadToken, names []string) []map[string]string {
-	result := make([]map[string]string, 0, len(tokens))
-	for index, token := range tokens {
-		result = append(result, map[string]string{"token": token.value, "filename": names[index]})
-	}
-	return result
-}
-
 func (client *Client) mutate(ctx context.Context, method, path string, payload any, out any) error {
+	if err := ctx.Err(); err != nil {
+		return errx.Translate(err)
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return errx.Internal("encode Redmine request")
@@ -65,7 +82,7 @@ func (client *Client) mutate(ctx context.Context, method, path string, payload a
 	if len(body) > maxMutationBody {
 		return errx.Usage("request body exceeds the %d-byte safety limit", maxMutationBody)
 	}
-	response, err := client.sendMethod(ctx, method, path, nil, bytes.NewReader(body), "application/json")
+	response, err := client.sendMethod(ctx, method, path, nil, bytes.NewReader(body), "application/json", int64(len(body)))
 	if err != nil {
 		return errx.WriteOutcomeUnknown("WRITE_OUTCOME_UNKNOWN", "Redmine write outcome is unknown")
 	}
@@ -90,7 +107,7 @@ func (client *Client) mutate(ctx context.Context, method, path string, payload a
 	return nil
 }
 
-func (client *Client) sendMethod(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string) (*http.Response, error) {
+func (client *Client) sendMethod(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string, contentLength int64) (*http.Response, error) {
 	fullURL := client.baseURL + path
 	if len(query) > 0 {
 		fullURL += "?" + query.Encode()
@@ -103,6 +120,9 @@ func (client *Client) sendMethod(ctx context.Context, method, path string, query
 	req.Header.Set("X-Redmine-API-Key", client.token)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
+	}
+	if contentLength >= 0 {
+		req.ContentLength = contentLength
 	}
 	client.log.Debug("Redmine request", "method", method)
 	return client.http.Do(req)
@@ -131,9 +151,9 @@ func (client *Client) writeStatus(response *http.Response) error {
 }
 
 // CreateIssue creates an issue from a validated attribute map.
-func (client *Client) CreateIssue(ctx context.Context, attributes map[string]any) (Issue, error) {
+func (client *Client) CreateIssue(ctx context.Context, attributes map[string]any, uploads []IssueUpload) (Issue, error) {
 	var response issueResponse
-	err := client.mutate(ctx, http.MethodPost, "/issues.json", map[string]any{"issue": attributes}, &response)
+	err := client.mutate(ctx, http.MethodPost, "/issues.json", issuePayload(attributes, uploads), &response)
 	if err == nil {
 		err = validateIssueValues([]Issue{response.Issue})
 		if err != nil {
@@ -144,11 +164,11 @@ func (client *Client) CreateIssue(ctx context.Context, attributes map[string]any
 }
 
 // UpdateIssue updates an issue from a validated attribute map.
-func (client *Client) UpdateIssue(ctx context.Context, id int, attributes map[string]any) (Issue, error) {
+func (client *Client) UpdateIssue(ctx context.Context, id int, attributes map[string]any, uploads []IssueUpload) (Issue, error) {
 	if id <= 0 {
 		return Issue{}, errx.Usage("issue ID must be a positive integer")
 	}
-	if err := client.mutate(ctx, http.MethodPut, "/issues/"+strconv.Itoa(id)+".json", map[string]any{"issue": attributes}, nil); err != nil {
+	if err := client.mutate(ctx, http.MethodPut, "/issues/"+strconv.Itoa(id)+".json", issuePayload(attributes, uploads), nil); err != nil {
 		return Issue{}, err
 	}
 	issue, err := client.Issue(ctx, id, nil)
@@ -156,6 +176,21 @@ func (client *Client) UpdateIssue(ctx context.Context, id int, attributes map[st
 		return Issue{}, errx.WriteOutcomeUnknown("WRITE_APPLIED_RESULT_UNAVAILABLE", "Redmine accepted the write but its result is unavailable")
 	}
 	return issue, nil
+}
+
+func issuePayload(attributes map[string]any, uploads []IssueUpload) map[string]any {
+	issue := make(map[string]any, len(attributes)+1)
+	for key, value := range attributes {
+		issue[key] = value
+	}
+	if len(uploads) > 0 {
+		values := make([]map[string]string, 0, len(uploads))
+		for _, upload := range uploads {
+			values = append(values, map[string]string{"token": upload.token.value, "filename": upload.filename})
+		}
+		issue["uploads"] = values
+	}
+	return map[string]any{"issue": issue}
 }
 
 // CreateProject creates a project from a validated attribute map.
@@ -197,15 +232,29 @@ func (client *Client) Files(ctx context.Context, project string) ([]File, error)
 }
 
 // Upload sends one bounded file and returns an opaque upload token.
-func (client *Client) Upload(ctx context.Context, filename string, body io.Reader) (UploadToken, error) {
+func (client *Client) Upload(ctx context.Context, filename string, size int64, body io.Reader) (UploadToken, error) {
 	if filename == "" || len(filename) > 255 {
 		return UploadToken{}, errx.Usage("filename is invalid")
 	}
 	if body == nil {
 		return UploadToken{}, errx.Usage("file content is required")
 	}
-	limited := &uploadLimitReader{reader: body, remaining: maxUploadBody}
-	response, err := client.sendMethod(ctx, http.MethodPost, "/uploads.json", url.Values{"filename": {filename}}, limited, "application/octet-stream")
+	if size < 0 || size > maxUploadBody {
+		return UploadToken{}, errx.Usage("file exceeds the 50 MiB safety limit")
+	}
+	if err := ctx.Err(); err != nil {
+		return UploadToken{}, errx.Translate(err)
+	}
+	buffered := bufio.NewReader(body)
+	if size == 0 {
+		if _, err := buffered.Peek(1); err == nil {
+			return UploadToken{}, errx.Usage("file content does not match its declared size")
+		} else if !errors.Is(err, io.EOF) {
+			return UploadToken{}, errx.Internal("read selected file before upload")
+		}
+	}
+	limited := &uploadLimitReader{reader: buffered, remaining: size}
+	response, err := client.sendMethod(ctx, http.MethodPost, "/uploads.json", url.Values{"filename": {filename}}, limited, "application/octet-stream", size)
 	if err != nil {
 		return UploadToken{}, errx.WriteOutcomeUnknown("WRITE_OUTCOME_UNKNOWN", "Redmine upload outcome is unknown")
 	}
@@ -236,31 +285,20 @@ func (client *Client) AddFile(ctx context.Context, projectID int, token UploadTo
 	return client.mutate(ctx, http.MethodPost, "/projects/"+strconv.Itoa(projectID)+"/files.json", map[string]any{"file": file}, nil)
 }
 
-// DownloadAttachment obtains bounded bytes only from a same-origin attachment URL.
+// DownloadAttachment obtains bounded bytes from Redmine's attachment-ID route.
 func (client *Client) DownloadAttachment(ctx context.Context, id int) ([]byte, error) {
 	if id <= 0 {
 		return nil, errx.Usage("attachment ID must be a positive integer")
 	}
-	var response struct {
-		Attachment Attachment `json:"attachment"`
+	if err := ctx.Err(); err != nil {
+		return nil, errx.Translate(err)
 	}
-	if err := client.get(ctx, request{path: "/attachments/" + strconv.Itoa(id) + ".json"}, &response); err != nil {
-		return nil, err
-	}
-	u, err := url.Parse(response.Attachment.ContentURL)
-	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Scheme != "https" {
-		return nil, errx.Internal("Redmine returned an unsafe attachment URL")
-	}
-	base, _ := url.Parse(client.baseURL)
-	basePath := strings.TrimSuffix(base.EscapedPath(), "/")
-	prefix := basePath + "/attachments/download/" + strconv.Itoa(id)
-	escaped := u.EscapedPath()
-	if u.Host != base.Host || (escaped != prefix && !strings.HasPrefix(escaped, prefix+"/")) {
-		return nil, errx.Internal("Redmine returned an unsafe attachment URL")
-	}
-	relative := strings.TrimPrefix(escaped, basePath)
-	responseHTTP, err := client.sendMethod(ctx, http.MethodGet, relative, nil, nil, "")
+	relative := "/attachments/download/" + strconv.Itoa(id)
+	responseHTTP, err := client.sendMethod(ctx, http.MethodGet, relative, nil, nil, "", -1)
 	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return nil, errx.Translate(contextErr)
+		}
 		return nil, errx.Retryable("NETWORK", 0, "could not download attachment")
 	}
 	defer responseHTTP.Body.Close()
@@ -269,7 +307,13 @@ func (client *Client) DownloadAttachment(ctx context.Context, id int) ([]byte, e
 		return nil, statusErr
 	}
 	data, err := io.ReadAll(io.LimitReader(responseHTTP.Body, maxDownloadBody+1))
-	if err != nil || len(data) > maxDownloadBody {
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return nil, errx.Translate(contextErr)
+		}
+		return nil, errx.Internal("read attachment response")
+	}
+	if len(data) > maxDownloadBody {
 		return nil, errx.Internal("attachment exceeds the 100 MiB safety limit")
 	}
 	return data, nil

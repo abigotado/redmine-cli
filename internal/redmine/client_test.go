@@ -50,7 +50,7 @@ func TestUpdateIssueReadbackFailureIsOutcomeUnknown(t *testing.T) {
 	}))
 	defer server.Close()
 	client := newForTest(server.URL, Credential{Token: secretSentinel})
-	_, err := client.UpdateIssue(context.Background(), 1, map[string]any{"subject": "x"})
+	_, err := client.UpdateIssue(context.Background(), 1, map[string]any{"subject": "x"}, nil)
 	if errx.ExitCode(err) != errx.CodeWriteOutcomeUnknown {
 		t.Fatalf("code=%d err=%v", errx.ExitCode(err), err)
 	}

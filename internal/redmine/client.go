@@ -1,4 +1,4 @@
-// Package redmine is a hardened read-only Redmine REST client.
+// Package redmine is a hardened, bounded Redmine REST client.
 package redmine
 
 import (

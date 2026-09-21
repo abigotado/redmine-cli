@@ -28,6 +28,20 @@ func openNoFollow(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	fileType, err := windows.GetFileType(handle)
+	if err != nil {
+		_ = windows.CloseHandle(handle)
+		return nil, fmt.Errorf("inspect selected file type: %w", err)
+	}
+	var details windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(handle, &details); err != nil {
+		_ = windows.CloseHandle(handle)
+		return nil, fmt.Errorf("inspect selected file metadata: %w", err)
+	}
+	if fileType != windows.FILE_TYPE_DISK || details.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		_ = windows.CloseHandle(handle)
+		return nil, fmt.Errorf("selected file is not a regular disk file")
+	}
 	file := os.NewFile(uintptr(handle), path)
 	if file == nil {
 		if closeErr := windows.CloseHandle(handle); closeErr != nil {

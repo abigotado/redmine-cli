@@ -86,7 +86,11 @@ func changedBool(cmd *cobra.Command, name, value string, attrs map[string]any) e
 	if value != "true" && value != "false" {
 		return errx.Usage("--%s must be true or false", name)
 	}
-	attrs[strings.ReplaceAll(name, "-", "_")] = value == "true"
+	key := strings.ReplaceAll(name, "-", "_")
+	if name == "public" {
+		key = "is_public"
+	}
+	attrs[key] = value == "true"
 	return nil
 }
 
@@ -106,12 +110,11 @@ func openSelectedRegularFile(path, label string, expected os.FileInfo) (*os.File
 	return file, nil
 }
 
-func issueAttachments(ctx context.Context, client redmineReader, paths []string) ([]map[string]string, error) {
+func issueAttachments(ctx context.Context, client redmineReader, paths []string) ([]redmine.IssueUpload, error) {
 	if len(paths) > 10 {
 		return nil, errx.Usage("at most 10 attachments are supported")
 	}
-	tokens := make([]redmine.UploadToken, 0, len(paths))
-	names := make([]string, 0, len(paths))
+	uploads := make([]redmine.IssueUpload, 0, len(paths))
 	var total int64
 	for _, path := range paths {
 		info, err := os.Lstat(path)
@@ -127,7 +130,7 @@ func issueAttachments(ctx context.Context, client redmineReader, paths []string)
 			return nil, err
 		}
 		name := filepath.Base(path)
-		token, uploadErr := client.Upload(ctx, name, file)
+		token, uploadErr := client.Upload(ctx, name, info.Size(), file)
 		closeErr := file.Close()
 		if uploadErr != nil {
 			return nil, uploadErr
@@ -135,10 +138,9 @@ func issueAttachments(ctx context.Context, client redmineReader, paths []string)
 		if closeErr != nil {
 			return nil, errx.Internal("close selected attachment")
 		}
-		tokens = append(tokens, token)
-		names = append(names, name)
+		uploads = append(uploads, redmine.NewIssueUpload(token, name))
 	}
-	return redmine.IssueUploads(tokens, names), nil
+	return uploads, nil
 }
 
 func attachmentPreviews(paths []string) ([]attachmentPreview, error) {
@@ -166,6 +168,10 @@ func (a *App) newIssuesCreateCommand() *cobra.Command {
 	var attachments []string
 	cmd := &cobra.Command{Use: "create", Short: "Create one Redmine issue", Args: usageArgs(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
 		if err := a.out.Validate(issueView{}); err != nil {
+			return err
+		}
+		includes, err := issueIncludes(a.fields, nil, true)
+		if err != nil {
 			return err
 		}
 		project, err := positive(projectID, "project ID")
@@ -200,16 +206,23 @@ func (a *App) newIssuesCreateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		uploads := []redmine.IssueUpload(nil)
 		if len(attachments) > 0 {
-			uploads, uploadErr := issueAttachments(cmd.Context(), client, attachments)
+			var uploadErr error
+			uploads, uploadErr = issueAttachments(cmd.Context(), client, attachments)
 			if uploadErr != nil {
 				return uploadErr
 			}
-			attrs["uploads"] = uploads
 		}
-		issue, err := client.CreateIssue(cmd.Context(), attrs)
+		issue, err := client.CreateIssue(cmd.Context(), attrs, uploads)
 		if err != nil {
 			return err
+		}
+		if len(includes) > 0 {
+			issue, err = client.Issue(cmd.Context(), issue.ID, includes)
+			if err != nil {
+				return errx.WriteOutcomeUnknown("WRITE_APPLIED_RESULT_UNAVAILABLE", "Redmine accepted the write but its result is unavailable")
+			}
 		}
 		return a.out.Success(issueView{issue})
 	}}
@@ -221,9 +234,7 @@ func (a *App) newIssuesCreateCommand() *cobra.Command {
 	flags.StringVar(&statusID, "status-id", "", "numeric status ID")
 	flags.StringVar(&priorityID, "priority-id", "", "numeric priority ID")
 	flags.StringVar(&assignee, "assigned-to-id", "", "numeric assignee ID or none")
-	flags.StringSliceVar(&attachments, "attach", nil, "regular file to attach (repeatable)")
-	_ = cmd.MarkFlagRequired("project-id")
-	_ = cmd.MarkFlagRequired("subject")
+	flags.StringArrayVar(&attachments, "attach", nil, "regular file to attach (repeatable)")
 	return cmd
 }
 
@@ -232,6 +243,10 @@ func (a *App) newIssuesUpdateCommand() *cobra.Command {
 	var attachments []string
 	cmd := &cobra.Command{Use: "update ID", Short: "Update one Redmine issue", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(cmd *cobra.Command, args []string) error {
 		if err := a.out.Validate(issueView{}); err != nil {
+			return err
+		}
+		includes, err := issueIncludes(a.fields, nil, true)
+		if err != nil {
 			return err
 		}
 		id, err := positive(args[0], "issue ID")
@@ -265,16 +280,23 @@ func (a *App) newIssuesUpdateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		uploads := []redmine.IssueUpload(nil)
 		if len(attachments) > 0 {
-			uploads, uploadErr := issueAttachments(cmd.Context(), client, attachments)
+			var uploadErr error
+			uploads, uploadErr = issueAttachments(cmd.Context(), client, attachments)
 			if uploadErr != nil {
 				return uploadErr
 			}
-			attrs["uploads"] = uploads
 		}
-		issue, err := client.UpdateIssue(cmd.Context(), id, attrs)
+		issue, err := client.UpdateIssue(cmd.Context(), id, attrs, uploads)
 		if err != nil {
 			return err
+		}
+		if len(includes) > 0 {
+			issue, err = client.Issue(cmd.Context(), issue.ID, includes)
+			if err != nil {
+				return errx.WriteOutcomeUnknown("WRITE_APPLIED_RESULT_UNAVAILABLE", "Redmine accepted the write but its result is unavailable")
+			}
 		}
 		return a.out.Success(issueView{issue})
 	}}
@@ -283,7 +305,7 @@ func (a *App) newIssuesUpdateCommand() *cobra.Command {
 	flags.StringVar(&description, "description", "", "issue description (empty clears)")
 	flags.StringVar(&statusID, "status-id", "", "numeric status ID")
 	flags.StringVar(&assignee, "assigned-to-id", "", "numeric assignee ID or none")
-	flags.StringSliceVar(&attachments, "attach", nil, "regular file to attach (repeatable)")
+	flags.StringArrayVar(&attachments, "attach", nil, "regular file to attach (repeatable)")
 	return cmd
 }
 
@@ -291,6 +313,10 @@ func (a *App) newProjectsCreateCommand() *cobra.Command {
 	var name, identifier, description, homepage, public, parentID, inheritMembers string
 	cmd := &cobra.Command{Use: "create", Short: "Create one Redmine project", Args: usageArgs(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error {
 		if err := a.out.Validate(projectView{}); err != nil {
+			return err
+		}
+		includes, err := projectIncludes(a.fields, nil)
+		if err != nil {
 			return err
 		}
 		if strings.TrimSpace(name) == "" || strings.TrimSpace(identifier) == "" {
@@ -323,6 +349,12 @@ func (a *App) newProjectsCreateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if len(includes) > 0 {
+			project, err = client.Project(cmd.Context(), strconv.Itoa(project.ID), includes)
+			if err != nil {
+				return errx.WriteOutcomeUnknown("WRITE_APPLIED_RESULT_UNAVAILABLE", "Redmine accepted the write but its result is unavailable")
+			}
+		}
 		return a.out.Success(projectView{project})
 	}}
 	flags := cmd.Flags()
@@ -333,20 +365,24 @@ func (a *App) newProjectsCreateCommand() *cobra.Command {
 	flags.StringVar(&public, "public", "", "true or false")
 	flags.StringVar(&parentID, "parent-id", "", "numeric parent project ID or none")
 	flags.StringVar(&inheritMembers, "inherit-members", "", "true or false")
-	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("identifier")
 	return cmd
 }
 
 func (a *App) newProjectsUpdateCommand() *cobra.Command {
-	var name, identifier, description, homepage, public, parentID, inheritMembers string
+	var name, description, homepage, public, parentID, inheritMembers string
 	cmd := &cobra.Command{Use: "update ID_OR_IDENTIFIER", Short: "Update one Redmine project", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(cmd *cobra.Command, args []string) error {
 		if err := a.out.Validate(projectView{}); err != nil {
 			return err
 		}
+		if err := redmine.ValidateProjectReference(args[0]); err != nil {
+			return err
+		}
+		includes, err := projectIncludes(a.fields, nil)
+		if err != nil {
+			return err
+		}
 		attrs := map[string]any{}
 		changedString(cmd, "name", name, attrs)
-		changedString(cmd, "identifier", identifier, attrs)
 		changedString(cmd, "description", description, attrs)
 		changedString(cmd, "homepage", homepage, attrs)
 		if err := changedBool(cmd, "public", public, attrs); err != nil {
@@ -380,11 +416,16 @@ func (a *App) newProjectsUpdateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if len(includes) > 0 {
+			project, err = client.Project(cmd.Context(), strconv.Itoa(project.ID), includes)
+			if err != nil {
+				return errx.WriteOutcomeUnknown("WRITE_APPLIED_RESULT_UNAVAILABLE", "Redmine accepted the write but its result is unavailable")
+			}
+		}
 		return a.out.Success(projectView{project})
 	}}
 	flags := cmd.Flags()
 	flags.StringVar(&name, "name", "", "project name")
-	flags.StringVar(&identifier, "identifier", "", "project identifier")
 	flags.StringVar(&description, "description", "", "project description (empty clears)")
 	flags.StringVar(&homepage, "homepage", "", "project homepage (empty clears)")
 	flags.StringVar(&public, "public", "", "true or false")
@@ -394,13 +435,16 @@ func (a *App) newProjectsUpdateCommand() *cobra.Command {
 }
 
 func (a *App) newFilesCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "files", Short: "Read and add Redmine project files", Args: usageArgs(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error { return errx.Usage("%s needs a command", cmd.CommandPath()) }}
+	cmd := &cobra.Command{Use: "files", Short: "List, upload, and download Redmine files", Args: usageArgs(cobra.NoArgs), RunE: func(cmd *cobra.Command, _ []string) error { return errx.Usage("%s needs a command", cmd.CommandPath()) }}
 	cmd.AddCommand(a.newFilesListCommand(), a.newFilesDownloadCommand(), a.newFilesAddCommand())
 	return cmd
 }
 func (a *App) newFilesListCommand() *cobra.Command {
 	return &cobra.Command{Use: "list PROJECT_ID_OR_IDENTIFIER", Short: "List project files", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(cmd *cobra.Command, args []string) error {
 		if err := a.out.Validate(fileViews(nil)); err != nil {
+			return err
+		}
+		if err := redmine.ValidateProjectReference(args[0]); err != nil {
 			return err
 		}
 		client, _, err := a.client(cmd.Context())
@@ -444,6 +488,9 @@ func (a *App) newFilesAddCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "add PROJECT_ID_OR_IDENTIFIER", Short: "Add one file to a project", Args: usageArgs(cobra.ExactArgs(1)), RunE: func(cmd *cobra.Command, args []string) error {
 		if a.out.Format == "raw" || len(a.fields) > 0 {
 			return errx.Usage("--output raw is not supported for write commands")
+		}
+		if err := redmine.ValidateProjectReference(args[0]); err != nil {
+			return err
 		}
 		version := 0
 		if cmd.Flags().Changed("version-id") {
@@ -493,7 +540,7 @@ func (a *App) newFilesAddCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		token, uploadErr := client.Upload(cmd.Context(), name, file)
+		token, uploadErr := client.Upload(cmd.Context(), name, info.Size(), file)
 		closeErr := file.Close()
 		if uploadErr != nil {
 			return uploadErr
@@ -511,6 +558,5 @@ func (a *App) newFilesAddCommand() *cobra.Command {
 	flags.StringVar(&filename, "filename", "", "uploaded filename")
 	flags.StringVar(&description, "description", "", "file description")
 	flags.StringVar(&versionID, "version-id", "", "numeric project version ID")
-	_ = cmd.MarkFlagRequired("path")
 	return cmd
 }
