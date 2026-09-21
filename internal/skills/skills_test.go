@@ -636,6 +636,10 @@ func TestUninstallRemovesEmptyOwnedDirectories(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dest, SkillName)); !os.IsNotExist(err) {
 		t.Errorf("empty owned skill directory remains: %v", err)
 	}
+	lock := filepath.Join(dest, ".redmine-cli-"+SkillName+"-skill"+lockSuffix)
+	if info, err := os.Stat(lock); err != nil || !info.Mode().IsRegular() {
+		t.Errorf("persistent coordination lock is unavailable: %v", err)
+	}
 }
 
 func TestUninstallRequiresConfirmationBeforeRemovingFiles(t *testing.T) {

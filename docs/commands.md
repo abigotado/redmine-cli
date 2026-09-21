@@ -53,6 +53,50 @@ Print the machine-readable envelope and exit-code contract
 
 No flags of its own.
 
+### `redmine-cli files add`
+
+Add one file to a project
+
+Usage: `redmine-cli files add PROJECT_ID_OR_IDENTIFIER`
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--description` | string |  | file description |
+| `--filename` | string |  | uploaded filename |
+| `--path` | string |  | local regular file |
+| `--version-id` | string |  | numeric project version ID |
+
+### `redmine-cli files download`
+
+Download one attachment
+
+Usage: `redmine-cli files download ATTACHMENT_ID`
+
+No flags of its own.
+
+### `redmine-cli files list`
+
+List project files
+
+Usage: `redmine-cli files list PROJECT_ID_OR_IDENTIFIER`
+
+No flags of its own.
+
+### `redmine-cli issues create`
+
+Create one Redmine issue
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--assigned-to-id` | string |  | numeric assignee ID or none |
+| `--attach` | stringArray |  | regular file to attach (repeatable) |
+| `--description` | string |  | issue description |
+| `--priority-id` | string |  | numeric priority ID |
+| `--project-id` | string |  | numeric Redmine project ID |
+| `--status-id` | string |  | numeric status ID |
+| `--subject` | string |  | issue subject |
+| `--tracker-id` | string |  | numeric tracker ID |
+
 ### `redmine-cli issues get`
 
 Read one issue by exact numeric ID
@@ -80,11 +124,39 @@ List one bounded page of issues with explicit filters
 | `--tracker-id` | string |  | numeric tracker ID |
 | `--updated-on` | string |  | Redmine updated_on filter expression |
 
+### `redmine-cli issues update`
+
+Update one Redmine issue
+
+Usage: `redmine-cli issues update ID`
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--assigned-to-id` | string |  | numeric assignee ID or none |
+| `--attach` | stringArray |  | regular file to attach (repeatable) |
+| `--description` | string |  | issue description (empty clears) |
+| `--status-id` | string |  | numeric status ID |
+| `--subject` | string |  | issue subject |
+
 ### `redmine-cli me`
 
 Read the authenticated Redmine user without exposing api_key
 
 No flags of its own.
+
+### `redmine-cli projects create`
+
+Create one Redmine project
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--description` | string |  | project description |
+| `--homepage` | string |  | project homepage |
+| `--identifier` | string |  | project identifier |
+| `--inherit-members` | string |  | true or false |
+| `--name` | string |  | project name |
+| `--parent-id` | string |  | numeric parent project ID or none |
+| `--public` | string |  | true or false |
 
 ### `redmine-cli projects get`
 
@@ -105,6 +177,21 @@ List one bounded page of visible projects
 | `--cursor` | string |  | opaque next_cursor from a previous matching call |
 | `--include` | stringSlice |  | associations: trackers,issue_categories,enabled_modules,time_entry_activities,issue_custom_fields |
 | `--limit` | int | `25` | maximum projects in this page (1-100) |
+
+### `redmine-cli projects update`
+
+Update one Redmine project
+
+Usage: `redmine-cli projects update ID_OR_IDENTIFIER`
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--description` | string |  | project description (empty clears) |
+| `--homepage` | string |  | project homepage (empty clears) |
+| `--inherit-members` | string |  | true or false |
+| `--name` | string |  | project name |
+| `--parent-id` | string |  | numeric parent project ID or none |
+| `--public` | string |  | true or false |
 
 ### `redmine-cli skills install`
 

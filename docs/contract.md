@@ -39,6 +39,7 @@ Each status maps to a distinct caller recovery action.
 | 7 | `CONFIRMATION_REQUIRED` | write was not confirmed | obtain approval, then add --yes |
 | 8 | `PERMISSION_DENIED` | Redmine permission or token scope denied | request permission or scope; do not retry unchanged |
 | 9 | `CONFLICT` | stale state or write conflict | re-read the issue or transition before deciding |
+| 10 | `WRITE_OUTCOME_UNKNOWN` | a write may have applied but its result is unavailable | check Redmine before retrying |
 
 ## Recovery rules
 

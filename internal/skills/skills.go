@@ -954,6 +954,9 @@ func withLock(ctx context.Context, guard, lockBase string, fn func() error) erro
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("wait for skill installer lock: %w", err)
 	}
+	// The fixed root lock intentionally survives uninstall. Unlinking an
+	// advisory lock lets a waiter retain the old inode while another process
+	// creates and locks a new one, allowing concurrent installers to overlap.
 	err := lockfile.With(lockBase, func() error {
 		if err := ctx.Err(); err != nil {
 			return err

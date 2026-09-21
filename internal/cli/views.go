@@ -110,6 +110,21 @@ func namedValue(value *redmine.NamedID) string {
 	return value.Name
 }
 
+type fileView struct{ redmine.File }
+
+func (view fileView) Fields() []output.Field {
+	return []output.Field{
+		{Name: "id", Value: fmt.Sprint(view.ID), Raw: view.ID},
+		{Name: "filename", Value: view.Filename, Raw: view.Filename},
+		{Name: "filesize", Value: fmt.Sprint(view.Filesize), Raw: view.Filesize},
+		{Name: "content_type", Value: view.ContentType, Raw: view.ContentType, OnRequest: true},
+		{Name: "description", Value: view.Description, Raw: view.Description, OnRequest: true},
+		{Name: "content_url", Value: view.ContentURL, Raw: view.ContentURL, OnRequest: true},
+		{Name: "author", Value: namedValue(view.Author), Raw: view.Author, OnRequest: true},
+		{Name: "created_on", Value: view.CreatedOn, Raw: view.CreatedOn, OnRequest: true},
+	}
+}
+
 func profileViews(values []profile.Profile) []profileView {
 	result := make([]profileView, 0, len(values))
 	for _, value := range values {
@@ -130,6 +145,14 @@ func issueViews(values []redmine.Issue) []issueView {
 	result := make([]issueView, 0, len(values))
 	for _, value := range values {
 		result = append(result, issueView{value})
+	}
+	return result
+}
+
+func fileViews(values []redmine.File) []fileView {
+	result := make([]fileView, 0, len(values))
+	for _, value := range values {
+		result = append(result, fileView{value})
 	}
 	return result
 }

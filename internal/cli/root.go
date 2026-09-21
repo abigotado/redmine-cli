@@ -37,6 +37,14 @@ type redmineReader interface {
 	Project(context.Context, string, []string) (redmine.Project, error)
 	Issues(context.Context, redmine.IssueListOptions) (redmine.IssuePage, error)
 	Issue(context.Context, int, []string) (redmine.Issue, error)
+	CreateIssue(context.Context, map[string]any, []redmine.IssueUpload) (redmine.Issue, error)
+	UpdateIssue(context.Context, int, map[string]any, []redmine.IssueUpload) (redmine.Issue, error)
+	CreateProject(context.Context, map[string]any) (redmine.Project, error)
+	UpdateProject(context.Context, int, map[string]any) (redmine.Project, error)
+	Files(context.Context, string) ([]redmine.File, error)
+	Upload(context.Context, string, int64, io.Reader) (redmine.UploadToken, error)
+	AddFile(context.Context, int, redmine.UploadToken, string, string, int) error
+	DownloadAttachment(context.Context, int) ([]byte, error)
 }
 
 // App contains only per-invocation state and injectable boundaries.
@@ -91,7 +99,7 @@ func NewApp() *App {
 func (a *App) NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "redmine-cli",
-		Short:         "Read Redmine safely from command lines and AI agents",
+		Short:         "Use Redmine safely from command lines and AI agents",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args: usageArgs(func(cmd *cobra.Command, args []string) error {
@@ -128,6 +136,7 @@ func (a *App) NewRootCommand() *cobra.Command {
 		a.newMeCommand(),
 		a.newProjectsCommand(),
 		a.newIssuesCommand(),
+		a.newFilesCommand(),
 	)
 	return root
 }
@@ -186,19 +195,17 @@ func (a *App) selectedProfile(ctx context.Context) (profile.Profile, error) {
 }
 
 func (a *App) client(ctx context.Context) (redmineReader, profile.Profile, error) {
-	if a.profileName == "" {
-		return nil, profile.Profile{}, errx.ProfileRequired()
+	selected, err := a.selectedProfile(ctx)
+	if err != nil {
+		return nil, profile.Profile{}, err
 	}
-	if a.registry == nil {
-		return nil, profile.Profile{}, errx.Internal("profile registry is unavailable")
-	}
-	var selected profile.Profile
+	profileName := selected.Name
 	var client redmineReader
-	err := a.registry.WithProfileLock(ctx, a.profileName, func() error {
+	err = a.registry.WithProfileLock(ctx, profileName, func() error {
 		var loadErr error
-		selected, loadErr = a.registry.Get(ctx, a.profileName)
+		selected, loadErr = a.registry.Get(ctx, profileName)
 		if loadErr != nil {
-			return translateLocal(loadErr, a.profileName)
+			return translateLocal(loadErr, profileName)
 		}
 		credential, loadErr := a.store.Load(ctx, selected.Name)
 		if loadErr != nil {
