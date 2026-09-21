@@ -47,7 +47,9 @@ func (a *App) preview(preview writePreview) error {
 	if a.profileName == "" {
 		return errx.ProfileRequired()
 	}
-	return a.out.Success(preview)
+	previewOutput := *a.out
+	previewOutput.Fields = nil
+	return previewOutput.Success(preview)
 }
 
 func positive(value, label string) (int, error) {

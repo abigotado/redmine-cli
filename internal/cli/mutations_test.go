@@ -120,6 +120,35 @@ func TestMutationDryRunAvoidsCredentialsNetworkAndFileContents(t *testing.T) {
 	}
 }
 
+func TestMutationDryRunIgnoresResultFieldSelection(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "issue create", args: []string{"issues", "create", "--project-id", "1", "--subject", "Ship it", "--fields", "attachments"}},
+		{name: "issue update", args: []string{"issues", "update", "7", "--subject", "Ship it", "--fields", "attachments"}},
+		{name: "project create", args: []string{"projects", "create", "--name", "Ship it", "--identifier", "ship-it", "--fields", "trackers"}},
+		{name: "project update", args: []string{"projects", "update", "ship-it", "--name", "Ship it", "--fields", "trackers"}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			stdout := &bytes.Buffer{}
+			app := &App{registry: &memoryRegistry{values: map[string]profile.Profile{}}, store: panicStore{}, stdin: panicReader{}, stdout: stdout, stderr: &bytes.Buffer{}, newRedmine: func(profile.Profile, auth.Credential, *slog.Logger) (redmineReader, error) {
+				panic("network must not be contacted")
+			}}
+			args := append([]string{"--profile", "preview"}, testCase.args...)
+			args = append(args, "--dry-run")
+			code := app.Run(context.Background(), app.NewRootCommand(), args)
+			if code != errx.CodeOK {
+				t.Fatalf("code=%d stdout=%s", code, stdout.String())
+			}
+			if !strings.Contains(stdout.String(), `"method"`) {
+				t.Fatalf("preview was not rendered: %s", stdout.String())
+			}
+		})
+	}
+}
+
 func TestSelectedRegularFileRejectsPathSwap(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "selected.txt")
