@@ -5,6 +5,13 @@ based on Keep a Changelog, and this project follows Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-21
+
+### Fixed
+
+- Publish v0.2 source artifacts from an annotated release tag through the
+  checksum-verified release pipeline.
+
 ## [0.2.0] - 2026-09-18
 
 ### Added
@@ -48,6 +55,7 @@ based on Keep a Changelog, and this project follows Semantic Versioning.
 - Race, architecture, HTTP contract, credential, skill installer, and
   disposable cross-binary Keychain tests.
 
-[Unreleased]: https://github.com/abigotado/redmine-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/abigotado/redmine-cli/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/abigotado/redmine-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/abigotado/redmine-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/abigotado/redmine-cli/releases/tag/v0.1.0
