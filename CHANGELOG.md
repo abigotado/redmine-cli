@@ -5,6 +5,13 @@ based on Keep a Changelog, and this project follows Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-22
+
+### Fixed
+
+- Wait for a newly created draft release and complete asset metadata before
+  verifying and publishing it, avoiding transient GitHub API visibility failures.
+
 ## [0.2.1] - 2026-09-21
 
 ### Fixed
@@ -55,7 +62,8 @@ based on Keep a Changelog, and this project follows Semantic Versioning.
 - Race, architecture, HTTP contract, credential, skill installer, and
   disposable cross-binary Keychain tests.
 
-[Unreleased]: https://github.com/abigotado/redmine-cli/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/abigotado/redmine-cli/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/abigotado/redmine-cli/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/abigotado/redmine-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/abigotado/redmine-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/abigotado/redmine-cli/releases/tag/v0.1.0
