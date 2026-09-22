@@ -21,3 +21,4 @@ release-check: verify
 	actionlint -no-color
 	./tools/release/test-source-bundle.sh
 	./tools/release/test-homebrew-offline.sh
+	./tools/release/test-draft-lookup.sh

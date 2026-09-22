@@ -255,33 +255,73 @@ jobs:
             --title "redmine-cli $tag" \
             --notes-file "$bundle/$notes"
 
-          releases_json=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")
-          release_count=$(jq --arg tag "$tag" '[.[] | select(.tag_name == $tag and .draft == true)] | length' <<<"$releases_json")
-          if [[ $release_count != 1 ]]; then
-            echo "expected exactly one draft release for $tag" >&2
-            exit 1
-          fi
-          release_json=$(jq -c --arg tag "$tag" '.[] | select(.tag_name == $tag and .draft == true)' <<<"$releases_json")
-          release_id=$(jq -er '.id' <<<"$release_json")
-          if [[ $(jq -er '.draft' <<<"$release_json") != true ]]; then
-            echo "release was not created as a draft" >&2
-            exit 1
-          fi
-          for asset in "$archive" "$notes" release-manifest.json SHA256SUMS; do
-            local_size=$(wc -c <"$bundle/$asset" | tr -d ' ')
-            local_digest="sha256:$(sha256sum "$bundle/$asset" | awk '{print $1}')"
-            remote_count=$(jq --arg name "$asset" '[.assets[] | select(.name == $name)] | length' <<<"$release_json")
-            remote_size=$(jq -er --arg name "$asset" '.assets[] | select(.name == $name) | .size' <<<"$release_json")
-            remote_digest=$(jq -er --arg name "$asset" '.assets[] | select(.name == $name) | .digest' <<<"$release_json")
-            if [[ $remote_count != 1 || $remote_size != "$local_size" || $remote_digest != "$local_digest" ]]; then
-              echo "remote asset verification failed for $asset" >&2
+          # BEGIN DRAFT LOOKUP (exercised by tools/release/test-draft-lookup.sh)
+          for attempt in {1..12}; do
+            releases_json=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100")
+            matching_json=$(jq -ec --arg tag "$tag" \
+              'if type == "array" then [.[] | select(.tag_name == $tag)] else error("expected a release list") end' \
+              <<<"$releases_json")
+            release_count=$(jq -r 'length' <<<"$matching_json")
+            if [[ $release_count -gt 1 ]]; then
+              echo "expected exactly one release for $tag, found $release_count" >&2
               exit 1
             fi
+            if [[ $release_count == 1 ]]; then
+              release_json=$(jq -c '.[0]' <<<"$matching_json")
+              if [[ $(jq -r '.draft' <<<"$release_json") != true ]]; then
+                echo "release for $tag is not a draft" >&2
+                exit 1
+              fi
+              if ! jq -e '.assets | type == "array"' <<<"$release_json" >/dev/null; then
+                echo "draft release has no asset list" >&2
+                exit 1
+              fi
+              if ! jq -e --arg archive "$archive" --arg notes "$notes" \
+                'all(.assets[]; .name == $archive or .name == $notes or .name == "release-manifest.json" or .name == "SHA256SUMS")' \
+                <<<"$release_json" >/dev/null; then
+                echo "unexpected release asset" >&2
+                exit 1
+              fi
+              assets_pending=false
+              for asset in "$archive" "$notes" release-manifest.json SHA256SUMS; do
+                remote_count=$(jq --arg name "$asset" '[.assets[] | select(.name == $name)] | length' <<<"$release_json")
+                if [[ $remote_count -gt 1 ]]; then
+                  echo "duplicate release asset: $asset" >&2
+                  exit 1
+                fi
+                if [[ $remote_count == 0 ]]; then
+                  assets_pending=true
+                  continue
+                fi
+                remote_digest=$(jq -r --arg name "$asset" '.assets[] | select(.name == $name) | .digest' <<<"$release_json")
+                if [[ $remote_digest == null ]]; then
+                  assets_pending=true
+                  continue
+                fi
+                local_size=$(wc -c <"$bundle/$asset" | tr -d ' ')
+                local_digest="sha256:$(sha256sum "$bundle/$asset" | awk '{print $1}')"
+                remote_size=$(jq -er --arg name "$asset" '.assets[] | select(.name == $name) | .size' <<<"$release_json")
+                if [[ $remote_size != "$local_size" || $remote_digest != "$local_digest" ]]; then
+                  echo "remote asset verification failed for $asset" >&2
+                  exit 1
+                fi
+              done
+              if [[ $assets_pending == false ]]; then
+                if [[ $(jq '.assets | length' <<<"$release_json") != 4 ]]; then
+                  echo "release has an unexpected remote asset count" >&2
+                  exit 1
+                fi
+                break
+              fi
+            fi
+            if [[ $attempt == 12 ]]; then
+              echo "draft release for $tag did not become complete after $attempt attempts" >&2
+              exit 1
+            fi
+            sleep 5
           done
-          if [[ $(jq '.assets | length' <<<"$release_json") != 4 ]]; then
-            echo "release has an unexpected remote asset count" >&2
-            exit 1
-          fi
+          # END DRAFT LOOKUP
+          release_id=$(jq -er '.id' <<<"$release_json")
           published_json=$(gh api \
             --method PATCH \
             "repos/$GITHUB_REPOSITORY/releases/$release_id" \

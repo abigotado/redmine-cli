@@ -48,6 +48,9 @@ jobs:
       - name: Offline Homebrew dependency build
         if: runner.os == 'Linux'
         run: ./tools/release/test-homebrew-offline.sh
+      - name: Draft release lookup tests
+        if: runner.os == 'Linux'
+        run: ./tools/release/test-draft-lookup.sh
 
   build-and-test:
     name: Build and test
